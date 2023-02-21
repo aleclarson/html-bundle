@@ -1,26 +1,25 @@
 #!/usr/bin/env node
 
-import type { Node, TextNode } from '@web/parse5-utils'
-import { findElements, getTagName } from '@web/parse5-utils'
-import awaitSpawn from 'await-spawn'
-import { execFile } from 'child_process'
-import { watch } from 'chokidar'
+import { Attribute } from '@web/parse5-utils'
+import browserslist from 'browserslist'
+import browserslistToEsbuild from 'browserslist-to-esbuild'
+import * as chokidar from 'chokidar'
 import Critters from 'critters'
 import esbuild from 'esbuild'
 import { lstat, readdir, readFile, rm, writeFile } from 'fs/promises'
 import glob from 'glob'
 import { minify } from 'html-minifier-terser'
+import * as lightningcss from 'lightningcss'
 import { parse, parseFragment, serialize } from 'parse5'
+import path from 'path'
 import { performance } from 'perf_hooks'
-import type { AcceptedPlugin } from 'postcss'
-import postcss from 'postcss'
-import { promisify } from 'util'
 import {
   bundleConfig,
   createDir,
   fileCopy,
+  findExternalScripts,
+  findStyleSheets,
   getBuildPath,
-  getPostCSSConfig,
 } from './utils.mjs'
 
 const isCritical =
@@ -29,24 +28,16 @@ const critters = new Critters({
   path: bundleConfig.build,
   logLevel: 'silent',
 })
-const handlerFile = process.argv.includes('--handler')
-  ? process.argv[process.argv.indexOf('--handler') + 1]
-  : bundleConfig.handler
 
 let timer = performance.now()
-let { plugins, options, file: postcssFile } = await getPostCSSConfig()
-let CSSprocessor = postcss(plugins as AcceptedPlugin[])
 const inlineFiles = new Set<string>()
-const TEMPLATE_LITERAL_MINIFIER = /\n\s+/g
-const INLINE_BUNDLE_FILE = /-bundle-\d+.tsx$/
 const SUPPORTED_FILES = /\.(html|css|jsx?|tsx?)$/
-const execFilePromise = promisify(execFile)
 
 if (bundleConfig.deletePrev) {
   await rm(bundleConfig.build, { force: true, recursive: true })
 }
 
-glob(`${bundleConfig.src}/**/*`, build)
+glob(`${bundleConfig.src}/**/*.html`, build)
 
 async function build(err: any, files: string[], firstRun = true) {
   if (err) {
@@ -56,39 +47,13 @@ async function build(err: any, files: string[], firstRun = true) {
 
   for (const file of files) {
     await createDir(file)
-
-    if (!SUPPORTED_FILES.test(file)) {
-      if (handlerFile) {
-        const { stdout } = await execFilePromise('node', [handlerFile, file])
-        if (String(stdout)) {
-          console.log('📋 Logging Handler: ', String(stdout))
-        }
-      } else {
-        if ((await lstat(file)).isDirectory()) {
-          continue
-        }
-        await fileCopy(file)
-      }
-    } else {
-      if (file.endsWith('.html')) {
-        await writeInlineScripts(file)
-      } else if (file.endsWith('.css')) {
-        await minifyCSS(file, getBuildPath(file))
-      } else {
-        inlineFiles.add(file)
-      }
-    }
-  }
-  await minifyCode()
-  for (const file of inlineFiles) {
-    if (INLINE_BUNDLE_FILE.test(file)) {
-      inlineFiles.delete(file)
-      await rm(file)
-    }
-  }
-  for (const file of files) {
     if (file.endsWith('.html')) {
       await minifyHTML(file, getBuildPath(file))
+    } else if (!SUPPORTED_FILES.test(file)) {
+      if ((await lstat(file)).isDirectory()) {
+        continue
+      }
+      await fileCopy(file)
     }
   }
 
@@ -99,34 +64,10 @@ async function build(err: any, files: string[], firstRun = true) {
   if (firstRun) {
     console.log(`⌛ Waiting for file changes ...`)
 
-    if (postcssFile) {
-      const postCSSWatcher = watch(postcssFile)
-      const tailwindCSSWatcher = watch(
-        postcssFile.replace('postcss', 'tailwind')
-      ) // Assuming that the file ext is the same
-      const tsConfigWatcher = watch(
-        postcssFile.split('\\').slice(0, -1).join('\\') + '\\tsconfig.json'
-      )
-
-      const cssFiles = files.filter(file => file.endsWith('.css'))
-      postCSSWatcher.on(
-        'change',
-        async () => await rebuildCSS(cssFiles, 'postcss')
-      )
-      tailwindCSSWatcher.on(
-        'change',
-        async () => await rebuildCSS(cssFiles, 'tailwind')
-      )
-      tsConfigWatcher.on('change', async () => {
-        timer = performance.now()
-        await build(null, files, false)
-      })
-    }
-
-    const watcher = watch(bundleConfig.src)
+    const watcher = chokidar.watch(bundleConfig.src)
     watcher.on('add', async file => {
       file = String.raw`${file}`.replace(/\\/g, '/') // glob and chokidar diff
-      if (files.includes(file) || INLINE_BUNDLE_FILE.test(file)) {
+      if (files.includes(file)) {
         return
       }
 
@@ -135,9 +76,6 @@ async function build(err: any, files: string[], firstRun = true) {
       console.log(`⚡ added ${file} to the build`)
     })
     watcher.on('change', async file => {
-      if (INLINE_BUNDLE_FILE.test(file)) {
-        return
-      }
       file = String.raw`${file}`.replace(/\\/g, '/')
 
       await rebuild(file)
@@ -145,9 +83,6 @@ async function build(err: any, files: string[], firstRun = true) {
       console.log(`⚡ modified ${file} on the build`)
     })
     watcher.on('unlink', async file => {
-      if (INLINE_BUNDLE_FILE.test(file)) {
-        return
-      }
       file = String.raw`${file}`.replace(/\\/g, '/')
 
       inlineFiles.delete(file)
@@ -166,184 +101,91 @@ async function build(err: any, files: string[], firstRun = true) {
     })
 
     async function rebuild(file: string) {
-      // Rebuild all CSS because a change in any file might need to trigger PostCSS zu rebuild(e.g. Tailwind CSS)
-      await rebuildCSS(files.filter(file => file.endsWith('.css')))
-
-      if (file.endsWith('.html')) {
-        // To refill the inlineFiles needed to build JS
-        for (const htmlFile of files.filter(file => file.endsWith('.html'))) {
-          await writeInlineScripts(htmlFile)
-        }
-        await minifyCode()
-        for (const file of inlineFiles) {
-          if (INLINE_BUNDLE_FILE.test(file)) {
-            inlineFiles.delete(file)
-            await rm(file)
-          }
-        }
-        await minifyHTML(file, getBuildPath(file))
-      } else if (/\.(jsx?|tsx?)$/.test(file)) {
-        inlineFiles.add(file)
-        await minifyCode()
-      } else if (!file.endsWith('.css')) {
-        if (handlerFile) {
-          const { stdout } = await execFilePromise('node', [handlerFile, file])
-          if (String(stdout))
-            console.log('📋 Logging Handler: ', String(stdout))
-        } else {
-          await fileCopy(file)
-        }
-      }
+      await minifyHTML(file, getBuildPath(file))
     }
-  }
-}
-
-async function minifyCSS(file: string, buildFile: string) {
-  try {
-    const fileText = await readFile(file, { encoding: 'utf-8' })
-    const result = await CSSprocessor.process(fileText, {
-      ...options,
-      from: file,
-      to: buildFile,
-    })
-    await writeFile(buildFile, result.css)
-  } catch (err) {
-    console.error(err)
-  }
-}
-
-async function minifyCode(): Promise<unknown> {
-  try {
-    return await esbuild.build({
-      entryPoints: Array.from(inlineFiles),
-      charset: 'utf8',
-      format: 'esm',
-      sourcemap: process.env.NODE_ENV != 'production',
-      splitting: true,
-      define: {
-        'process.env.NODE_ENV': `"${process.env.NODE_ENV}"`,
-      },
-      loader: { '.js': 'jsx', '.ts': 'tsx' },
-      bundle: true,
-      minify: true,
-      outdir: bundleConfig.build,
-      outbase: bundleConfig.src,
-      ...bundleConfig.esbuild,
-    })
-    // Stop app from crashing.
-  } catch (err: any) {
-    console.error(err)
-
-    let missingPkg = false
-    if (err?.errors) {
-      for (const error of err.errors) {
-        if (error.text?.startsWith('Could not resolve')) {
-          missingPkg = true
-          const packageNameRegex = /(?<=").*(?=")/
-          const [pkgName] = error.text.match(packageNameRegex)
-
-          await awaitSpawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', [
-            'install',
-            pkgName,
-          ])
-
-          console.log(`📦 Package ${pkgName} was installed for you`)
-        }
-      }
-
-      if (missingPkg) {
-        missingPkg = false
-        return minifyCode()
-      }
-    }
-  }
-}
-
-const htmlFilesCache = new Map()
-async function writeInlineScripts(file: string) {
-  let fileText = await readFile(file, { encoding: 'utf-8' })
-
-  let DOM
-  if (fileText.includes('<!DOCTYPE html>') || fileText.includes('<html')) {
-    DOM = parse(fileText)
-  } else {
-    DOM = parseFragment(fileText)
-  }
-
-  htmlFilesCache.set(file, [fileText, DOM])
-
-  const scripts = findElements(DOM as Node, e => getTagName(e) === 'script')
-  for (let index = 0; index < scripts.length; index++) {
-    const script = scripts[index]
-    const scriptTextNode = script.childNodes[0] as TextNode
-    const isReferencedScript = script.attrs.find(
-      (a: { name: string }) => a.name === 'src'
-    )
-    const scriptContent = scriptTextNode?.value
-    if (!scriptContent || isReferencedScript) {
-      continue
-    }
-
-    const jsFile = file.replace('.html', `-bundle-${index}.tsx`)
-    inlineFiles.add(jsFile)
-    await writeFile(jsFile, scriptContent)
   }
 }
 
 async function minifyHTML(file: string, buildFile: string) {
-  let fileText, DOM
+  let fileText = await readFile(file, { encoding: 'utf-8' })
+  if (!fileText) {
+    return
+  }
 
-  if (htmlFilesCache.has(file)) {
-    const cache = htmlFilesCache.get(file)
-    fileText = cache[0]
-    DOM = cache[1]
-  } else {
-    fileText = await readFile(file, { encoding: 'utf-8' })
+  let DOM: any =
+    fileText.includes('<!DOCTYPE html>') || fileText.includes('<html')
+      ? parse(fileText)
+      : parseFragment(fileText)
 
-    if (fileText.includes('<!DOCTYPE html>') || fileText.includes('<html')) {
-      DOM = parse(fileText)
-    } else {
-      DOM = parseFragment(fileText)
+  const entryScripts: { srcAttr: Attribute; srcPath: string }[] = []
+  for (const scriptNode of findExternalScripts(DOM)) {
+    const srcAttr = scriptNode.attrs.find(a => a.name === 'src')
+    if (srcAttr?.value.startsWith('./')) {
+      entryScripts.push({
+        srcAttr,
+        srcPath: path.join(path.dirname(file), srcAttr.value),
+      })
     }
   }
 
-  // Minify Code
-  const scripts = findElements(DOM, e => getTagName(e) === 'script')
-  for (let index = 0; index < scripts.length; index++) {
-    const script = scripts[index]
-    const scriptTextNode = script.childNodes[0] as TextNode
-    const isReferencedScript = script.attrs.find(
-      (a: { name: string }) => a.name === 'src'
-    )
-    if (!scriptTextNode?.value || isReferencedScript) {
-      continue
+  const entryStyles: { srcAttr: Attribute; srcPath: string }[] = []
+  for (const styleNode of findStyleSheets(DOM)) {
+    const srcAttr = styleNode.attrs.find(a => a.name === 'href')
+    if (srcAttr?.value.startsWith('./')) {
+      entryStyles.push({
+        srcAttr,
+        srcPath: path.join(path.dirname(file), srcAttr.value),
+      })
     }
-
-    // Use bundled file
-    const buildInlineScript = buildFile.replace('.html', `-bundle-${index}.js`)
-
-    const scriptContent = await readFile(buildInlineScript, {
-      encoding: 'utf-8',
-    })
-    await rm(buildInlineScript)
-    scriptTextNode.value = scriptContent.replace(TEMPLATE_LITERAL_MINIFIER, ' ')
   }
 
-  // Minify Inline Style
-  const styles = findElements(DOM, e => getTagName(e) === 'style')
-  for (const style of styles) {
-    const node = style.childNodes[0] as TextNode
-    const styleContent = node?.value
-    if (!styleContent) {
-      continue
-    }
+  const esTargets = browserslistToEsbuild(bundleConfig.targets)
+  const cssTargets = lightningcss.browserslistToTargets(
+    browserslist(bundleConfig.targets)
+  )
 
-    const { css } = await CSSprocessor.process(styleContent, {
-      ...options,
-      from: undefined,
-    })
-    node.value = css
-  }
+  await Promise.all([
+    ...entryScripts.map(script =>
+      esbuild
+        .build({
+          entryPoints: [script.srcPath],
+          charset: 'utf8',
+          format: 'esm',
+          target: esTargets,
+          sourcemap: process.env.NODE_ENV != 'production' ? 'inline' : false,
+          define: {
+            'process.env.NODE_ENV': `"${process.env.NODE_ENV}"`,
+          },
+          splitting: true,
+          bundle: true,
+          minify: true,
+          outdir: bundleConfig.build,
+          outbase: bundleConfig.src,
+          ...bundleConfig.esbuild,
+        })
+        .then(() => {
+          const outPath = getBuildPath(script.srcPath)
+          script.srcAttr.value =
+            './' + path.relative(path.dirname(buildFile), outPath)
+        })
+    ),
+    ...entryStyles.map(style =>
+      lightningcss
+        .bundleAsync({
+          filename: style.srcPath,
+          drafts: { nesting: true },
+          targets: cssTargets,
+          minify: true,
+          ...bundleConfig.lightningcss,
+        })
+        .then(async result => {
+          const outPath = getBuildPath(style.srcPath)
+          style.srcAttr.value =
+            './' + path.relative(path.dirname(buildFile), outPath)
+          await writeFile(outPath, result.code)
+        })
+    ),
+  ])
 
   fileText = serialize(DOM)
 
@@ -373,18 +215,4 @@ async function minifyHTML(file: string, buildFile: string) {
 
   await writeFile(buildFile, fileText)
   return fileText
-}
-
-async function rebuildCSS(files: string[], config?: string) {
-  const newConfig = await getPostCSSConfig()
-  plugins = newConfig.plugins
-  options = newConfig.options
-  CSSprocessor = postcss(plugins as AcceptedPlugin[])
-  for (const file of files) {
-    await minifyCSS(file, getBuildPath(file))
-  }
-
-  if (config) {
-    console.log(`⚡ modified ${config}.config`)
-  }
 }

@@ -1,7 +1,6 @@
-import cssnano from 'cssnano'
+import { findElements, getAttribute, getTagName, Node } from '@web/parse5-utils'
 import { copyFile, mkdir } from 'fs/promises'
 import path from 'path'
-import postcssrc from 'postcss-load-config'
 
 export const bundleConfig = await getBundleConfig()
 
@@ -19,12 +18,18 @@ export function getBuildPath(file: string) {
   return file.replace(`${bundleConfig.src}/`, `${bundleConfig.build}/`)
 }
 
-export async function getPostCSSConfig() {
-  try {
-    return await postcssrc({})
-  } catch {
-    return { plugins: [cssnano], options: {}, file: '' }
-  }
+export function findStyleSheets(rootNode: Node) {
+  return findElements(
+    rootNode,
+    e => getTagName(e) === 'link' && getAttribute(e, 'rel') === 'stylesheet'
+  )
+}
+
+export function findExternalScripts(rootNode: Node) {
+  return findElements(
+    rootNode,
+    e => getTagName(e) === 'script' && !!getAttribute(e, 'src')
+  )
 }
 
 async function getBundleConfig() {
@@ -32,7 +37,9 @@ async function getBundleConfig() {
     build: 'build',
     src: 'src',
     port: 5000,
+    targets: '>=0.25%, not dead',
     esbuild: {},
+    lightningcss: {},
     'html-minifier-terser': {},
     critical: {},
     deletePrev: true,
