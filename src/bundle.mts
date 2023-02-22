@@ -14,6 +14,7 @@ import * as chokidar from 'chokidar'
 import Critters from 'critters'
 import * as esbuild from 'esbuild'
 import importGlobPlugin from 'esbuild-plugin-import-glob'
+import { execa } from 'execa'
 import { existsSync } from 'fs'
 import { readdir, readFile, rm, writeFile } from 'fs/promises'
 import glob from 'glob'
@@ -27,11 +28,13 @@ import { performance } from 'perf_hooks'
 import { debounce } from 'ts-debounce'
 import * as ws from 'ws'
 import {
+  baseRelative,
   bundleConfig,
   createDir,
   findExternalScripts,
   findStyleSheets,
   getBuildPath,
+  relative,
 } from './utils.mjs'
 
 const isCritical =
@@ -67,10 +70,15 @@ async function build(err: any, files: string[]) {
     (performance.now() - timer).toFixed(2)
   )
 
+  if (bundleConfig.type == 'web-extension') {
+    await packWebExtension()
+  }
+
   if (isWatchMode) {
     const wss = new ws.WebSocketServer({ port: 5001 })
     wss.on('connection', ws => {
       hmrClients.add(ws)
+      ws.on('close', () => hmrClients.delete(ws))
     })
 
     const watcher = chokidar.watch(bundleConfig.src, { ignoreInitial: true })
@@ -101,48 +109,53 @@ async function build(err: any, files: string[]) {
       console.log(red('delete'), file)
     })
 
-    const rebuild = debounce(() => {
+    const rebuild = debounce(async () => {
       let isHtmlUpdate = false
-      let isHmrUpdate = false
+      let isHotUpdate = false
       changedFiles.forEach(file => {
         console.log(cyan('update'), file)
         if (file.endsWith('.css')) {
-          isHmrUpdate = true
+          isHotUpdate = true
         } else {
           isHtmlUpdate = true
         }
       })
       changedFiles.clear()
-      if (isHmrUpdate && hmrClients.size) {
-        const hmrUpdates: object[] = []
-        cssEntries.forEach((_hash, file) => {
-          if (!existsSync(file)) {
-            cssEntries.delete(file)
-            return
-          }
-          buildCSSFile(file).then(result => {
-            if (result.changed) {
-              hmrUpdates.push({
-                file: '/' + path.relative(process.cwd(), result.outFile),
-                type: 'css',
-              })
-            }
-          })
-        })
-        hmrClients.forEach(client => {
-          for (const update of hmrUpdates) {
-            client.send(JSON.stringify(update))
-          }
-        })
-      }
       if (isHtmlUpdate) {
         const timer = performance.now()
-        Promise.all(files.map(buildHTML)).then(() => {
+        return Promise.all(files.map(buildHTML)).then(() => {
+          const fullReload = JSON.stringify({ type: 'full-reload' })
+          hmrClients.forEach(client => client.send(fullReload))
           console.log(
             gray('build complete in %sms'),
             (performance.now() - timer).toFixed(2)
           )
         })
+      }
+      if (isHotUpdate && hmrClients.size) {
+        const hmrUpdates: string[] = []
+        await Promise.all(
+          Array.from(cssEntries.keys(), async (file, i) => {
+            if (existsSync(file)) {
+              const { changed, outFile, code } = await buildCSSFile(file)
+              if (changed) {
+                hmrUpdates[i] = JSON.stringify({
+                  type: 'css',
+                  file: baseRelative(outFile),
+                  code: code.toString('utf8'),
+                })
+              }
+            } else {
+              cssEntries.delete(file)
+            }
+          })
+        )
+        if (hmrUpdates.length) {
+          console.log(gray('sending css updates...'))
+          hmrClients.forEach(client => {
+            hmrUpdates.forEach(update => client.send(update))
+          })
+        }
       }
     }, 200)
 
@@ -160,9 +173,9 @@ function parseHTML(html: string) {
 
 async function buildHTML(file: string) {
   let html = await readFile(file, 'utf8')
-  if (!html) {
-    return
-  }
+  if (!html) return
+
+  const outFile = getBuildPath(file)
 
   const document = parseHTML(html)
   await Promise.all([
@@ -171,7 +184,13 @@ async function buildHTML(file: string) {
   ])
 
   if (isWatchMode) {
-    const hmrScript = createScript({}, await getHMRScript())
+    const hmrClientCode = await getHMRClient()
+    const hmrClientPath = path.resolve(bundleConfig.build, 'hmr.mjs')
+    await writeFile(hmrClientPath, hmrClientCode)
+    const hmrScript = createScript({
+      type: 'module',
+      src: relative(outFile, hmrClientPath),
+    })
     const head = findElement(document, e => e.tagName === 'head')!
     appendChild(head, hmrScript)
   }
@@ -188,29 +207,27 @@ async function buildHTML(file: string) {
     } catch (e) {
       console.error(e)
     }
-  }
 
-  if (!isWatchMode && isCritical) {
-    try {
-      const isPartical = !html.startsWith('<!DOCTYPE html>')
-      html = await critters.process(html)
-      // fix critters jsdom
-      if (isPartical) {
-        html = html.replace(/<\/?(html|head|body)>/g, '')
+    if (isCritical) {
+      try {
+        const isPartical = !html.startsWith('<!DOCTYPE html>')
+        html = await critters.process(html)
+        // fix critters jsdom
+        if (isPartical) {
+          html = html.replace(/<\/?(html|head|body)>/g, '')
+        }
+      } catch (err) {
+        console.error(err)
       }
-    } catch (err) {
-      console.error(err)
     }
   }
 
-  const outFile = getBuildPath(file)
   await createDir(outFile)
   await writeFile(outFile, html)
   return html
 }
 
 async function buildLocalScripts(document: Node, file: string) {
-  const outDir = path.dirname(getBuildPath(file))
   const entryScripts: { srcAttr: Attribute; srcPath: string }[] = []
   for (const scriptNode of findExternalScripts(document)) {
     const srcAttr = scriptNode.attrs.find(a => a.name === 'src')
@@ -228,7 +245,7 @@ async function buildLocalScripts(document: Node, file: string) {
       return esbuild
         .build({
           entryPoints: [script.srcPath],
-          plugins: [importGlobPlugin.default()],
+          plugins: [importGlobPlugin()],
           charset: 'utf8',
           format: 'esm',
           target: esTargets,
@@ -248,7 +265,7 @@ async function buildLocalScripts(document: Node, file: string) {
             /\.[tj]sx?$/,
             '.js'
           )
-          script.srcAttr.value = './' + path.relative(outDir, outPath)
+          script.srcAttr.value = baseRelative(outPath)
         })
     })
   )
@@ -284,7 +301,6 @@ async function buildCSSFile(file: string, cssTargets = getCSSTargets()) {
 }
 
 async function buildLocalStyles(document: Node, file: string) {
-  const outDir = path.dirname(getBuildPath(file))
   const entryStyles: { srcAttr: Attribute; srcPath: string }[] = []
   for (const styleNode of findStyleSheets(document)) {
     const srcAttr = styleNode.attrs.find(a => a.name === 'href')
@@ -299,25 +315,61 @@ async function buildLocalStyles(document: Node, file: string) {
   await Promise.all(
     entryStyles.map(style =>
       buildCSSFile(style.srcPath, cssTargets).then(async result => {
-        style.srcAttr.value = './' + path.relative(outDir, result.outFile)
+        style.srcAttr.value = baseRelative(result.outFile)
       })
     )
   )
 }
 
-let hmrScriptPromise: Promise<string>
+let hmrClientPromise: Promise<string>
 
-function getHMRScript() {
-  return (hmrScriptPromise ||= (async () => {
+function getHMRClient() {
+  return (hmrClientPromise ||= (async () => {
     const hmrScriptPath = new URL('./hmr.js', import.meta.url).pathname
     return esbuild
       .build({
         entryPoints: [hmrScriptPath],
-        minify: true,
+        // minify: true,
         write: false,
       })
       .then(result => {
         return result.outputFiles[0].text
       })
   })())
+}
+
+async function packWebExtension() {
+  const ignoredFiles = new Set(await readdir(process.cwd()))
+  const keepFile = (file: unknown) =>
+    typeof file == 'string' && ignoredFiles.delete(file.split('/')[0])
+
+  keepFile(bundleConfig.build)
+  keepFile('manifest.json')
+  keepFile('public')
+
+  const manifest = JSON.parse(await readFile('manifest.json', 'utf8'))
+  keepFile(manifest.browser_action?.default_icon)
+  keepFile(manifest.browser_action?.default_popup)
+  manifest.chrome_url_overrides &&
+    Object.values(manifest.chrome_url_overrides).forEach(keepFile)
+  manifest.icons && Object.values(manifest.icons).forEach(keepFile)
+  manifest.background?.scripts?.forEach(keepFile)
+  manifest.content_scripts?.forEach(
+    ({ css, js }: { css?: string[]; js?: string[] }) => {
+      css?.forEach(keepFile)
+      js?.forEach(keepFile)
+    }
+  )
+
+  const argv = []
+  if (isWatchMode) {
+    argv.push('--as-needed')
+  }
+  argv.push('-o', '--ignore-files', ...ignoredFiles)
+  const packing = execa('web-ext', ['build', ...argv], {
+    stdio: isWatchMode ? 'ignore' : 'inherit',
+  })
+  if (!isWatchMode) {
+    await packing
+  }
 }

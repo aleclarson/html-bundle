@@ -1,12 +1,8 @@
 import { findElements, getAttribute, getTagName, Node } from '@web/parse5-utils'
-import { copyFile, mkdir } from 'fs/promises'
+import { mkdir } from 'fs/promises'
 import * as path from 'path'
 
 export const bundleConfig = await getBundleConfig()
-
-export function fileCopy(file: string) {
-  return copyFile(file, getBuildPath(file))
-}
 
 export function createDir(file: string) {
   return mkdir(path.dirname(file), { recursive: true })
@@ -14,6 +10,18 @@ export function createDir(file: string) {
 
 export function getBuildPath(file: string) {
   return file.replace(`${bundleConfig.src}/`, `${bundleConfig.build}/`)
+}
+
+export function baseRelative(file: string) {
+  return '/' + path.relative(process.cwd(), file)
+}
+
+export function relative(from: string, to: string) {
+  let result = path.relative(path.dirname(from), to)
+  if (!result.startsWith('.')) {
+    result = './' + result
+  }
+  return result
 }
 
 export function findStyleSheets(rootNode: Node) {
