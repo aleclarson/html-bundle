@@ -1,8 +1,12 @@
 # @alloc/html-bundle
 
-Divergent fork of `html-bundle`
+Divergent fork of `html-bundle` that I made for simple-as-fuck SPA setups. Unfortunately no JS HMR, but it's not a big deal for me.
 
-- ESBuild integration (TypeScript + ESM syntax)
+<sub>You should probably just use Vite.</sub>
+
+### Features
+
+- ESBuild integration (TypeScript + ESM syntax, code splitting, dynamic imports)
 - LightningCSS integration
 - Browserslist integration
 - HTML entry point scanning
