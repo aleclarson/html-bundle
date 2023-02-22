@@ -2,9 +2,61 @@
 
 Divergent fork of `html-bundle`
 
-- ESBuild integration
+- ESBuild integration (TypeScript + ESM syntax)
 - LightningCSS integration
 - Browserslist integration
-- automatic HTML entry points
+- HTML entry point scanning
 - JS/CSS bundling
-- rebuild on file change
+- `import.meta.glob` support
+- `--watch` mode
+  - CSS hot reloading
+  - HTML rebuild on JS/HTML changes
+  - sets `NODE_ENV=development`
+- default mode
+  - HTML/JS/CSS minification
+  - critical CSS extraction (via `isCritical` option or `--critical` flag)
+  - sets `NODE_ENV=production`
+
+### Usage
+
+Before running `html-bundle`, you should move your HTML files into the `src/` directory and use relative paths for JS/CSS references inside your HTML files.
+
+```sh
+# Run in development mode
+pnpm html-bundle --watch
+
+# Run in production mode
+pnpm html-bundle
+```
+
+If you want TypeScript to recognize `import.meta.glob` calls, you can add the following to your `tsconfig.json` file.
+
+```json
+{
+  "compilerOptions": {
+    "lib": ["esnext"],
+    "types": ["@alloc/html-bundle/client.d.ts"]
+  }
+}
+```
+
+### Configuration
+
+The `bundle.config.js` file allows for customization.
+
+```js
+export default {
+  // Browserslist targets.
+  targets: ['defaults', 'not IE 11'],
+  // Input and output directories.
+  src: './src',
+  build: './build',
+  // Tool-specific options.
+  esbuild: {...},
+  lightningcss: {...},
+  // If true, will extract critical CSS from the HTML files.
+  isCritical: false,
+  // If true, will delete the build directory before building.
+  deletePrev: false,
+}
+```

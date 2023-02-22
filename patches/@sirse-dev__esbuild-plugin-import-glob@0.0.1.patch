@@ -1,0 +1,12 @@
+diff --git a/dist/index.js b/dist/index.js
+index 78da29b71f48cceadf55bc12e26ac7f48e9d9467..0319cf679369c4417de53dda8208f57510c1c565 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -269,6 +269,4 @@ var createPlugin = /* @__PURE__ */ __name((options) => {
+     }
+   };
+ }, "createPlugin");
+-var src_default = createPlugin;
+-// Annotate the CommonJS export names for ESM import in node:
+-0 && (module.exports = {});
++export default createPlugin;

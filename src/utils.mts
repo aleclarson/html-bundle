@@ -1,6 +1,6 @@
 import { findElements, getAttribute, getTagName, Node } from '@web/parse5-utils'
 import { copyFile, mkdir } from 'fs/promises'
-import path from 'path'
+import * as path from 'path'
 
 export const bundleConfig = await getBundleConfig()
 
@@ -9,9 +9,7 @@ export function fileCopy(file: string) {
 }
 
 export function createDir(file: string) {
-  const buildPath = getBuildPath(file)
-  const dir = buildPath.split('/').slice(0, -1).join('/')
-  return mkdir(dir, { recursive: true })
+  return mkdir(path.dirname(file), { recursive: true })
 }
 
 export function getBuildPath(file: string) {

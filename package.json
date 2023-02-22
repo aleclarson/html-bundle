@@ -25,7 +25,8 @@
     "@alloc/prettier-config": "^1.0.0",
     "@types/glob": "^8.0.0",
     "@types/html-minifier-terser": "^7.0.0",
-    "@types/parse5": "^7.0.0",
+    "@types/parse5": "6",
+    "@types/ws": "^8.5.4",
     "prettier": "^2.8.4",
     "typescript": "^4.9.4"
   },
@@ -36,9 +37,19 @@
     "chokidar": "^3.5.3",
     "critters": "^0.0.16",
     "esbuild": "^0.17.3",
+    "esbuild-plugin-import-glob": "npm:@sirse-dev/esbuild-plugin-import-glob@0.0.1",
     "glob": "^8.1.0",
     "html-minifier-terser": "^7.1.0",
+    "kleur": "^4.1.5",
     "lightningcss": "^1.19.0",
-    "parse5": "^7.1.2"
+    "md5-hex": "^4.0.0",
+    "parse5": "^6.0.1",
+    "ts-debounce": "^4.0.0",
+    "ws": "^8.12.1"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "@sirse-dev/esbuild-plugin-import-glob@0.0.1": "patches/@sirse-dev__esbuild-plugin-import-glob@0.0.1.patch"
+    }
   }
 }
