@@ -2,7 +2,7 @@ lockfileVersion: 5.4
 
 patchedDependencies:
   '@sirse-dev/esbuild-plugin-import-glob@0.0.1':
-    hash: ivaifvoeqpq2gynfhxiaudr6qm
+    hash: ijx3sq26ajkqpedfy52ny7tw6i
     path: patches/@sirse-dev__esbuild-plugin-import-glob@0.0.1.patch
 
 specifiers:
@@ -37,7 +37,7 @@ dependencies:
   chokidar: 3.5.3
   critters: 0.0.16
   esbuild: 0.17.10
-  esbuild-plugin-import-glob: /@sirse-dev/esbuild-plugin-import-glob/0.0.1_ivaifvoeqpq2gynfhxiaudr6qm
+  esbuild-plugin-import-glob: /@sirse-dev/esbuild-plugin-import-glob/0.0.1_ijx3sq26ajkqpedfy52ny7tw6i
   execa: 7.0.0
   glob: 8.1.0
   html-minifier-terser: 7.1.0
@@ -530,7 +530,7 @@ packages:
       fastq: 1.15.0
     dev: false
 
-  /@sirse-dev/esbuild-plugin-import-glob/0.0.1_ivaifvoeqpq2gynfhxiaudr6qm:
+  /@sirse-dev/esbuild-plugin-import-glob/0.0.1_ijx3sq26ajkqpedfy52ny7tw6i:
     resolution: {integrity: sha512-tkStk1M0I1lRc5LACo/PD/okw4gNrZQRoKCKoKDuiGnVJnzL/mLds0A8pkRQIN2SW3kwIrMTk2b0bUCg4xT+Pg==}
     dependencies:
       '@babel/core': 7.21.0

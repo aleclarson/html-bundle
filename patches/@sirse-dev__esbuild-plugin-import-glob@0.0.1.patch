@@ -1,3 +1,27 @@
+diff --git a/dist/client.d.ts b/dist/client.d.ts
+index 92041b6139b89b62a34583138142330a96cefd57..757c7400af330fefed8074a1bbb6876a8a29e16f 100644
+--- a/dist/client.d.ts
++++ b/dist/client.d.ts
+@@ -2,14 +2,13 @@ interface ImportMeta {
+ 	glob: ImportGlobFunction;
+ }
+ 
+-type ImportGlobOptions<TEager extends boolean> = {
+-	eager?: TEager;
++type ImportGlobOptions = {
++	eager?: boolean;
+ 	import?: string;
+ };
+ 
+ interface ImportGlobFunction {
+-	<TEager extends boolean = false>(
+-		pattern: string | string[],
+-		options?: ImportGlobOptions<TEager>,
+-	): TEager extends true ? Record<string, unknown> : Record<string, () => Promise<unknown>>;
++	<T>(pattern: string | string[], options?: ImportGlobOptions & { eager: undefined }): Record<string, () => Promise<T>>;
++	<T>(pattern: string | string[], options?: ImportGlobOptions & { eager: true }): Record<string, T>;
++	(pattern: string | string[], options?: ImportGlobOptions): Record<string, any>;
+ }
 diff --git a/dist/index.js b/dist/index.mjs
 similarity index 66%
 rename from dist/index.js
@@ -171,7 +195,7 @@ index 1d41eb3358b4bdded38df327c1c83212f6059ded..476d707aad3023980f9e13e53a1d68a1
 +  "names": ["dirname", "types", "value", "types", "dirname"]
  }
 diff --git a/package.json b/package.json
-index e15d29d06f196da7399665fca586f19b17af79fa..80524a7f09bf30bedfd26c7ac76f5a58ec97ab85 100644
+index e15d29d06f196da7399665fca586f19b17af79fa..3ef6e5387848938d23d592ab9e7bfde7948a0eb9 100644
 --- a/package.json
 +++ b/package.json
 @@ -1,21 +1,45 @@
@@ -239,3 +263,4 @@ index e15d29d06f196da7399665fca586f19b17af79fa..80524a7f09bf30bedfd26c7ac76f5a58
 +		"fast-glob": "^3.2.11"
 +	}
  }
+\ No newline at end of file
