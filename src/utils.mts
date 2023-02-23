@@ -2,18 +2,7 @@ import { findElements, getAttribute, getTagName, Node } from '@web/parse5-utils'
 import { mkdir } from 'fs/promises'
 import * as path from 'path'
 import { loadConfig } from 'unconfig'
-
-type Config = {
-  type?: 'web-extension'
-  src: string
-  build: string
-  targets: string
-  esbuild: any
-  lightningcss: any
-  'html-minifier-terser': any
-  isCritical: boolean
-  deletePrev: boolean
-}
+import { Config } from '../config.mjs'
 
 export const bundleConfig = await loadConfig<Config>({
   defaults: {
@@ -21,8 +10,8 @@ export const bundleConfig = await loadConfig<Config>({
     src: 'src',
     targets: '>=0.25%, not dead',
     esbuild: {},
-    lightningcss: {},
-    'html-minifier-terser': {},
+    lightningCss: {},
+    htmlMinifierTerser: {},
     isCritical: false,
     deletePrev: true,
   },
@@ -30,7 +19,12 @@ export const bundleConfig = await loadConfig<Config>({
     { files: 'bundle.config' },
     { files: 'package.json', rewrite: (config: any) => config?.bundle },
   ],
-}).then(r => r.config)
+}).then(r => {
+  return {
+    ...r.config,
+    webext: r.config.webext == true ? {} : r.config.webext || undefined,
+  }
+})
 
 export function createDir(file: string) {
   return mkdir(path.dirname(file), { recursive: true })

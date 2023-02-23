@@ -10,6 +10,7 @@ import {
 } from '@web/parse5-utils'
 import browserslist from 'browserslist'
 import browserslistToEsbuild from 'browserslist-to-esbuild'
+import cac from 'cac'
 import * as chokidar from 'chokidar'
 import Critters from 'critters'
 import * as esbuild from 'esbuild'
@@ -37,44 +38,60 @@ import {
   relative,
 } from './utils.mjs'
 
-const isCritical =
-  process.argv.includes('--isCritical') || bundleConfig.isCritical
 const critters = new Critters({
   path: bundleConfig.build,
   logLevel: 'silent',
 })
 
-const isWatchMode = process.argv.includes('--watch')
 const hmrClients = new Set<ws.WebSocket>()
 const cssEntries = new Map<string, string>()
 
-process.env.NODE_ENV = isWatchMode ? 'development' : 'production'
+const cli = cac('html-bundle')
 
-glob(`${bundleConfig.src}/**/*.html`, build)
+cli
+  .command('')
+  .option('--watch', `[boolean]`)
+  .option('--critical', `[boolean]`, { default: bundleConfig.isCritical })
+  .option('--webext', 'Set webext options')
+  .action(async options => {
+    glob(`${bundleConfig.src}/**/*.html`, (err, files) => {
+      if (err) {
+        console.error(err)
+        process.exit(1)
+      }
+      process.env.NODE_ENV = options.watch ? 'development' : 'production'
+      build(files, options)
+    })
+  })
 
-async function build(err: any, files: string[]) {
-  if (err) {
-    console.error(err)
-    process.exit(1)
+cli.parse()
+
+interface Options {
+  watch?: boolean
+  critical?: boolean
+  webext?: {
+    target?: string
   }
+}
 
+async function build(files: string[], options: Options) {
   if (bundleConfig.deletePrev) {
     await rm(bundleConfig.build, { force: true, recursive: true })
   }
 
   const timer = performance.now()
   files = files.map(file => path.resolve(file))
-  await Promise.all(files.map(buildHTML))
+  await Promise.all(files.map(file => buildHTML(file, options)))
   console.log(
     cyan('build complete in %sms'),
     (performance.now() - timer).toFixed(2)
   )
 
-  if (bundleConfig.type == 'web-extension') {
-    await packWebExtension()
+  if (bundleConfig.webext) {
+    await packWebExtension(options)
   }
 
-  if (isWatchMode) {
+  if (options.watch) {
     const wss = new ws.WebSocketServer({ port: 5001 })
     wss.on('connection', ws => {
       hmrClients.add(ws)
@@ -124,7 +141,7 @@ async function build(err: any, files: string[]) {
       changedFiles.clear()
       if (isHtmlUpdate) {
         const timer = performance.now()
-        await Promise.all(files.map(buildHTML))
+        await Promise.all(files.map(file => buildHTML(file, options)))
         const fullReload = JSON.stringify({ type: 'full-reload' })
         hmrClients.forEach(client => client.send(fullReload))
         console.log(
@@ -136,7 +153,10 @@ async function build(err: any, files: string[]) {
         await Promise.all(
           Array.from(cssEntries.keys(), async (file, i) => {
             if (existsSync(file)) {
-              const { changed, outFile, code } = await buildCSSFile(file)
+              const { changed, outFile, code } = await buildCSSFile(
+                file,
+                options
+              )
               if (changed) {
                 hmrUpdates[i] = JSON.stringify({
                   type: 'css',
@@ -170,7 +190,7 @@ function parseHTML(html: string) {
   ) as ParentNode
 }
 
-async function buildHTML(file: string) {
+async function buildHTML(file: string, options: Options) {
   let html = await readFile(file, 'utf8')
   if (!html) return
 
@@ -178,11 +198,11 @@ async function buildHTML(file: string) {
 
   const document = parseHTML(html)
   await Promise.all([
-    buildLocalScripts(document, file),
-    buildLocalStyles(document, file),
+    buildLocalScripts(document, file, options),
+    buildLocalStyles(document, file, options),
   ])
 
-  if (isWatchMode) {
+  if (options.watch) {
     const hmrClientCode = await getHMRClient()
     const hmrClientPath = path.resolve(bundleConfig.build, 'hmr.mjs')
     await writeFile(hmrClientPath, hmrClientCode)
@@ -196,18 +216,18 @@ async function buildHTML(file: string) {
 
   html = serialize(document)
 
-  if (!isWatchMode) {
+  if (!options.watch) {
     try {
       html = await minify(html, {
         collapseWhitespace: true,
         removeComments: true,
-        ...bundleConfig['html-minifier-terser'],
+        ...bundleConfig.htmlMinifierTerser,
       })
     } catch (e) {
       console.error(e)
     }
 
-    if (isCritical) {
+    if (options.critical) {
       try {
         const isPartical = !html.startsWith('<!DOCTYPE html>')
         html = await critters.process(html)
@@ -226,7 +246,11 @@ async function buildHTML(file: string) {
   return html
 }
 
-async function buildLocalScripts(document: Node, file: string) {
+async function buildLocalScripts(
+  document: Node,
+  file: string,
+  options: Options
+) {
   const entryScripts: { srcAttr: Attribute; srcPath: string }[] = []
   for (const scriptNode of findExternalScripts(document)) {
     const srcAttr = scriptNode.attrs.find(a => a.name === 'src')
@@ -246,9 +270,9 @@ async function buildLocalScripts(document: Node, file: string) {
         .build({
           format: 'esm',
           charset: 'utf8',
-          sourcemap: isWatchMode ? 'inline' : false,
+          sourcemap: options.watch ? 'inline' : false,
           splitting: true,
-          minify: !isWatchMode,
+          minify: !options.watch,
           ...esbuildOpts,
           bundle: true,
           entryPoints: [script.srcPath],
@@ -268,6 +292,7 @@ async function buildLocalScripts(document: Node, file: string) {
           )
           script.srcAttr.value = baseRelative(outPath)
         })
+        .catch(console.error)
     })
   )
 }
@@ -276,16 +301,23 @@ function getCSSTargets() {
   return lightningCss.browserslistToTargets(browserslist(bundleConfig.targets))
 }
 
-async function buildCSSFile(file: string, cssTargets = getCSSTargets()) {
+async function buildCSSFile(
+  file: string,
+  options: Options,
+  cssTargets = getCSSTargets()
+) {
   console.log(green(path.relative(process.cwd(), file)))
   const result = await lightningCss.bundleAsync({
-    filename: file,
-    drafts: { nesting: true },
     targets: cssTargets,
-    minify: !isWatchMode,
-    sourceMap: isWatchMode,
+    minify: !options.watch,
+    sourceMap: options.watch,
     errorRecovery: true,
-    ...bundleConfig.lightningcss,
+    ...bundleConfig.lightningCss,
+    filename: file,
+    drafts: {
+      nesting: true,
+      ...bundleConfig.lightningCss?.drafts,
+    },
   })
 
   if (result.warnings.length) {
@@ -320,7 +352,11 @@ async function buildCSSFile(file: string, cssTargets = getCSSTargets()) {
   return { ...result, changed: hash != prevHash, outFile }
 }
 
-async function buildLocalStyles(document: Node, file: string) {
+async function buildLocalStyles(
+  document: Node,
+  file: string,
+  options: Options
+) {
   const entryStyles: { srcAttr: Attribute; srcPath: string }[] = []
   for (const styleNode of findStyleSheets(document)) {
     const srcAttr = styleNode.attrs.find(a => a.name === 'href')
@@ -334,7 +370,7 @@ async function buildLocalStyles(document: Node, file: string) {
   const cssTargets = getCSSTargets()
   await Promise.all(
     entryStyles.map(style =>
-      buildCSSFile(style.srcPath, cssTargets).then(async result => {
+      buildCSSFile(style.srcPath, options, cssTargets).then(async result => {
         style.srcAttr.value = baseRelative(result.outFile)
       })
     )
@@ -358,7 +394,7 @@ function getHMRClient() {
   })())
 }
 
-async function packWebExtension() {
+async function packWebExtension(options: Options) {
   const ignoredFiles = new Set(await readdir(process.cwd()))
   const keepFile = (file: unknown) =>
     typeof file == 'string' && ignoredFiles.delete(file.split('/')[0])
@@ -381,15 +417,55 @@ async function packWebExtension() {
     }
   )
 
-  const argv = []
-  if (isWatchMode) {
-    argv.push('--as-needed')
+  const argv: string[] = []
+  if (options.watch) {
+    argv.push('run')
+
+    const extConfig = { ...bundleConfig.webext, ...options.webext }
+    if (extConfig.preInstall) {
+      argv.push('--pre-install')
+    } else if (extConfig.reload == false) {
+      argv.push('--no-reload')
+    }
+    if (extConfig.devtools) {
+      argv.push('--devtools')
+    }
+    if (extConfig.browserConsole) {
+      argv.push('--browser-console')
+    }
+
+    const runTarget =
+      options.webext?.target || extConfig.run?.target || 'firefox-desktop'
+
+    if (runTarget) {
+      argv.push('--target', runTarget)
+      if (runTarget == 'chromium') {
+        if (extConfig.run?.chromiumBinary) {
+          argv.push('--chromium-binary', extConfig.run.chromiumBinary)
+        }
+      } else if (extConfig.run?.firefoxBinary) {
+        argv.push('--firefox', extConfig.run.firefoxBinary)
+      }
+    }
+
+    let startUrl = extConfig.run?.startUrl
+    if (startUrl) {
+      if (!Array.isArray(startUrl)) {
+        startUrl = [startUrl]
+      }
+      startUrl.forEach(url => argv.push('--start-url', url))
+    }
+
+    argv.push('--watch-ignored', ...ignoredFiles)
+  } else {
+    argv.push('build', '-o', '--ignore-files', ...ignoredFiles)
   }
-  argv.push('-o', '--ignore-files', ...ignoredFiles)
-  const packing = execa('web-ext', ['build', ...argv], {
-    stdio: isWatchMode ? 'ignore' : 'inherit',
+
+  const packing = execa('web-ext', argv, {
+    stdio: options.watch ? 'ignore' : 'inherit',
   })
-  if (!isWatchMode) {
+
+  if (!options.watch) {
     await packing
   }
 }
