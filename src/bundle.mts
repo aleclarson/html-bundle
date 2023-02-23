@@ -17,7 +17,7 @@ import * as esbuild from 'esbuild'
 import importGlobPlugin from 'esbuild-plugin-import-glob'
 import { execa } from 'execa'
 import { existsSync } from 'fs'
-import { readdir, readFile, rm, writeFile } from 'fs/promises'
+import { copyFile, readdir, readFile, rm, writeFile } from 'fs/promises'
 import glob from 'glob'
 import { minify } from 'html-minifier-terser'
 import { cyan, gray, green, red, yellow } from 'kleur/colors'
@@ -243,6 +243,31 @@ async function buildHTML(file: string, options: Options) {
 
   await createDir(outFile)
   await writeFile(outFile, html)
+
+  if (bundleConfig.copy) {
+    for (const path of bundleConfig.copy) {
+      if (glob.hasMagic(path)) {
+        glob(path, (err, files) => {
+          if (err) {
+            console.error(err)
+          } else {
+            files.forEach(async file => {
+              console.log(cyan('copy'), baseRelative(file))
+              const outPath = getBuildPath(path)
+              await createDir(outPath)
+              await copyFile(file, outPath)
+            })
+          }
+        })
+      } else {
+        console.log(cyan('copy'), baseRelative(path))
+        const outPath = getBuildPath(path)
+        await createDir(outPath)
+        await copyFile(path, outPath)
+      }
+    }
+  }
+
   return html
 }
 

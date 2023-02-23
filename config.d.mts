@@ -17,6 +17,7 @@ export type WebExtensionOptions = {
 
 export type Config = {
   src: string
+  copy?: string[]
   build: string
   targets: string
   /** @see https://extensionworkshop.com/documentation/develop/web-ext-command-reference/#web-ext-run */
