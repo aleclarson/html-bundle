@@ -15,7 +15,7 @@ import * as chokidar from 'chokidar'
 import Critters from 'critters'
 import * as esbuild from 'esbuild'
 import importGlobPlugin from 'esbuild-plugin-import-glob'
-import { execa } from 'execa'
+import { execa, execaSync } from 'execa'
 import { existsSync } from 'fs'
 import { copyFile, readdir, readFile, rm, writeFile } from 'fs/promises'
 import glob from 'glob'
@@ -28,6 +28,7 @@ import * as path from 'path'
 import { performance } from 'perf_hooks'
 import { debounce } from 'ts-debounce'
 import * as ws from 'ws'
+import { WebExtension } from '../config.mjs'
 import {
   baseRelative,
   bundleConfig,
@@ -36,6 +37,7 @@ import {
   findStyleSheets,
   getBuildPath,
   relative,
+  toArray,
 } from './utils.mjs'
 
 const critters = new Critters({
@@ -70,7 +72,7 @@ interface Options {
   watch?: boolean
   critical?: boolean
   webext?: {
-    target?: string
+    target?: Extract<WebExtension.RunOption, string>
   }
 }
 
@@ -420,6 +422,13 @@ function getHMRClient() {
 }
 
 async function packWebExtension(options: Options) {
+  if (execaSync('which', ['web-ext']).exitCode != 0) {
+    return console.error(
+      red('web-ext not found.'),
+      'Please install it with `npm i -g web-ext`'
+    )
+  }
+
   const ignoredFiles = new Set(await readdir(process.cwd()))
   const keepFile = (file: unknown) =>
     typeof file == 'string' && ignoredFiles.delete(file.split('/')[0])
@@ -442,7 +451,9 @@ async function packWebExtension(options: Options) {
     }
   )
 
-  const argv: string[] = []
+  const procs: string[][] = []
+
+  let argv: string[] = []
   if (options.watch) {
     argv.push('run')
 
@@ -458,37 +469,52 @@ async function packWebExtension(options: Options) {
     if (extConfig.browserConsole) {
       argv.push('--browser-console')
     }
-
-    const runTarget =
-      options.webext?.target || extConfig.run?.target || 'firefox-desktop'
-
-    if (runTarget) {
-      argv.push('--target', runTarget)
-      if (runTarget == 'chromium') {
-        if (extConfig.run?.chromiumBinary) {
-          argv.push('--chromium-binary', extConfig.run.chromiumBinary)
-        }
-      } else if (extConfig.run?.firefoxBinary) {
-        argv.push('--firefox', extConfig.run.firefoxBinary)
-      }
-    }
-
-    let startUrl = extConfig.run?.startUrl
-    if (startUrl) {
-      if (!Array.isArray(startUrl)) {
-        startUrl = [startUrl]
-      }
-      startUrl.forEach(url => argv.push('--start-url', url))
-    }
-
     argv.push('--watch-ignored', ...ignoredFiles)
+
+    const runTargets = toArray(
+      options.webext?.target || extConfig.run || 'chromium'
+    ).filter(Boolean)
+
+    const sharedArgv = argv
+    for (const runTarget of runTargets) {
+      const runOptions: Exclude<WebExtension.RunOption, string> =
+        typeof runTarget == 'string' ? { target: runTarget } : runTarget
+
+      argv = [...sharedArgv]
+      procs.push(argv)
+
+      argv.push('--target', runOptions.target)
+      if (runOptions.target == 'chromium') {
+        if (runOptions.binary) {
+          argv.push('--chromium-binary', runOptions.binary)
+        }
+      } else if (runOptions.binary) {
+        argv.push('--firefox', runOptions.binary)
+      }
+
+      let startUrl = runOptions.startUrl
+      if (startUrl) {
+        if (!Array.isArray(startUrl)) {
+          startUrl = [startUrl]
+        }
+        startUrl.forEach(url => argv.push('--start-url', url))
+      }
+    }
   } else {
     argv.push('build', '-o', '--ignore-files', ...ignoredFiles)
   }
 
-  const packing = execa('web-ext', argv, {
-    stdio: options.watch ? 'ignore' : 'inherit',
-  })
+  if (!procs.length) {
+    procs.push(argv)
+  }
+
+  const packing = Promise.all(
+    procs.map(argv =>
+      execa('web-ext', argv, {
+        stdio: options.watch ? 'ignore' : 'inherit',
+      })
+    )
+  )
 
   if (!options.watch) {
     await packing

@@ -47,6 +47,10 @@ export function getBuildPath(file: string) {
   return file
 }
 
+export function toArray<T>(value: T | T[]) {
+  return Array.isArray(value) ? value : [value]
+}
+
 export function baseRelative(file: string) {
   return '/' + path.relative(process.cwd(), file)
 }
