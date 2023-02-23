@@ -397,9 +397,17 @@ async function buildLocalStyles(
   const cssTargets = getCSSTargets()
   await Promise.all(
     entryStyles.map(style =>
-      buildCSSFile(style.srcPath, options, cssTargets).then(async result => {
-        style.srcAttr.value = baseRelative(result.outFile)
-      })
+      buildCSSFile(style.srcPath, options, cssTargets)
+        .then(async result => {
+          style.srcAttr.value = baseRelative(result.outFile)
+        })
+        .catch(e => {
+          console.error(
+            'Failed to compile "%s":',
+            baseRelative(style.srcPath),
+            e
+          )
+        })
     )
   )
 }
