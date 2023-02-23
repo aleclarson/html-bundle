@@ -463,12 +463,6 @@ async function packWebExtension(options: Options) {
     } else if (extConfig.reload == false) {
       argv.push('--no-reload')
     }
-    if (extConfig.devtools) {
-      argv.push('--devtools')
-    }
-    if (extConfig.browserConsole) {
-      argv.push('--browser-console')
-    }
     argv.push('--watch-ignored', ...ignoredFiles)
 
     const runTargets = toArray(
@@ -488,8 +482,16 @@ async function packWebExtension(options: Options) {
         if (runOptions.binary) {
           argv.push('--chromium-binary', runOptions.binary)
         }
-      } else if (runOptions.binary) {
-        argv.push('--firefox', runOptions.binary)
+      } else {
+        if (runOptions.binary) {
+          argv.push('--firefox', runOptions.binary)
+        }
+        if (runOptions.devtools) {
+          argv.push('--devtools')
+        }
+        if (runOptions.browserConsole) {
+          argv.push('--browser-console')
+        }
       }
 
       let startUrl = runOptions.startUrl

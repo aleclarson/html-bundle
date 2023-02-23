@@ -9,6 +9,8 @@ export namespace WebExtension {
   type FirefoxRunOptions = CommonRunOptions & {
     target: 'firefox-desktop' | 'firefox-android'
     binary?: 'firefox' | 'beta' | 'nightly' | 'deved' | (string & {})
+    devtools?: boolean
+    browserConsole?: boolean
   }
 
   type ChromiumRunOptions = CommonRunOptions & {
@@ -27,8 +29,6 @@ export namespace WebExtension {
     /** @default true */
     reload?: boolean
     preInstall?: boolean
-    devtools?: boolean
-    browserConsole?: boolean
     run?: RunOption[]
   }
 }
