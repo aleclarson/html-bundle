@@ -242,23 +242,25 @@ async function buildLocalScripts(document: Node, file: string) {
   await Promise.all(
     entryScripts.map(script => {
       console.log(green(path.relative(process.cwd(), script.srcPath)))
+      const esbuildOpts = bundleConfig.esbuild
       return esbuild
         .build({
-          entryPoints: [script.srcPath],
-          plugins: [importGlobPlugin()],
-          charset: 'utf8',
           format: 'esm',
-          target: esTargets,
+          charset: 'utf8',
           sourcemap: isWatchMode ? 'inline' : false,
-          define: {
-            'process.env.NODE_ENV': `"${process.env.NODE_ENV}"`,
-          },
           splitting: true,
-          bundle: true,
           minify: !isWatchMode,
+          ...esbuildOpts,
+          bundle: true,
+          entryPoints: [script.srcPath],
           outdir: bundleConfig.build,
           outbase: bundleConfig.src,
-          ...bundleConfig.esbuild,
+          target: esTargets,
+          plugins: [importGlobPlugin(), ...(esbuildOpts.plugins || [])],
+          define: {
+            'process.env.NODE_ENV': `"${process.env.NODE_ENV}"`,
+            ...esbuildOpts.define,
+          },
         })
         .then(() => {
           const outPath = getBuildPath(script.srcPath).replace(
