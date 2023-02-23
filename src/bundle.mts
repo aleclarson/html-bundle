@@ -440,24 +440,24 @@ async function packWebExtension(options: Options) {
   const ignoredFiles = new Set(await readdir(process.cwd()))
   const keepFile = (file: unknown) =>
     typeof file == 'string' && ignoredFiles.delete(file.split('/')[0])
+  const keepFiles = (arg: any) =>
+    typeof arg == 'string'
+      ? keepFile(arg)
+      : Array.isArray(arg)
+      ? arg.forEach(keepFiles)
+      : arg && Object.values(arg).forEach(keepFiles)
 
   keepFile(bundleConfig.build)
   keepFile('manifest.json')
   keepFile('public')
 
   const manifest = JSON.parse(await readFile('manifest.json', 'utf8'))
-  keepFile(manifest.browser_action?.default_icon)
   keepFile(manifest.browser_action?.default_popup)
-  manifest.chrome_url_overrides &&
-    Object.values(manifest.chrome_url_overrides).forEach(keepFile)
-  manifest.icons && Object.values(manifest.icons).forEach(keepFile)
-  manifest.background?.scripts?.forEach(keepFile)
-  manifest.content_scripts?.forEach(
-    ({ css, js }: { css?: string[]; js?: string[] }) => {
-      css?.forEach(keepFile)
-      js?.forEach(keepFile)
-    }
-  )
+  keepFiles(manifest.background?.scripts)
+  keepFiles(manifest.browser_action?.default_icon)
+  keepFiles(manifest.chrome_url_overrides)
+  keepFiles(manifest.content_scripts)
+  keepFiles(manifest.icons)
 
   const procs: string[][] = []
 
