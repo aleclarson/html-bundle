@@ -112,6 +112,7 @@ async function build(err: any, files: string[]) {
     const rebuild = debounce(async () => {
       let isHtmlUpdate = false
       let isHotUpdate = false
+      console.clear()
       changedFiles.forEach(file => {
         console.log(cyan('update'), file)
         if (file.endsWith('.css')) {
@@ -123,16 +124,14 @@ async function build(err: any, files: string[]) {
       changedFiles.clear()
       if (isHtmlUpdate) {
         const timer = performance.now()
-        return Promise.all(files.map(buildHTML)).then(() => {
-          const fullReload = JSON.stringify({ type: 'full-reload' })
-          hmrClients.forEach(client => client.send(fullReload))
-          console.log(
-            gray('build complete in %sms'),
-            (performance.now() - timer).toFixed(2)
-          )
-        })
-      }
-      if (isHotUpdate && hmrClients.size) {
+        await Promise.all(files.map(buildHTML))
+        const fullReload = JSON.stringify({ type: 'full-reload' })
+        hmrClients.forEach(client => client.send(fullReload))
+        console.log(
+          gray('build complete in %sms'),
+          (performance.now() - timer).toFixed(2)
+        )
+      } else if (isHotUpdate && hmrClients.size) {
         const hmrUpdates: string[] = []
         await Promise.all(
           Array.from(cssEntries.keys(), async (file, i) => {
@@ -151,12 +150,12 @@ async function build(err: any, files: string[]) {
           })
         )
         if (hmrUpdates.length) {
-          console.log(gray('sending css updates...'))
           hmrClients.forEach(client => {
             hmrUpdates.forEach(update => client.send(update))
           })
         }
       }
+      console.log(yellow('watching files...'))
     }, 200)
 
     console.log(yellow('watching files...'))
