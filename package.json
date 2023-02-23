@@ -1,6 +1,6 @@
 {
   "name": "@alloc/html-bundle",
-  "version": "6.0.16",
+  "version": "7.0.0",
   "bin": {
     "html-bundle": "./dist/bundle.mjs"
   },
