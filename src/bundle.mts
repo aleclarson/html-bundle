@@ -289,7 +289,7 @@ async function buildLocalScripts(
   const esTargets = browserslistToEsbuild(bundleConfig.targets)
   await Promise.all(
     entryScripts.map(script => {
-      console.log(green(path.relative(process.cwd(), script.srcPath)))
+      console.log(green(baseRelative(script.srcPath)))
       const esbuildOpts = bundleConfig.esbuild
       return esbuild
         .build({
@@ -331,7 +331,7 @@ async function buildCSSFile(
   options: Options,
   cssTargets = getCSSTargets()
 ) {
-  console.log(green(path.relative(process.cwd(), file)))
+  console.log(green(baseRelative(file)))
   const result = await lightningCss.bundleAsync({
     targets: cssTargets,
     minify: !options.watch,
