@@ -31,7 +31,20 @@ export function createDir(file: string) {
 }
 
 export function getBuildPath(file: string) {
-  return file.replace(`${bundleConfig.src}/`, `${bundleConfig.build}/`)
+  const wasAbsolute = path.isAbsolute(file)
+  if (wasAbsolute) {
+    file = path.relative(process.cwd(), file)
+  }
+  const src = bundleConfig.src.replace(/^\.\//, '') + '/'
+  if (file.startsWith(src)) {
+    file = file.replace(src, bundleConfig.build + '/')
+  } else {
+    file = path.join(bundleConfig.build, file)
+  }
+  if (wasAbsolute) {
+    file = path.join(process.cwd(), file)
+  }
+  return file
 }
 
 export function baseRelative(file: string) {
