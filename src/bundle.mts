@@ -20,7 +20,7 @@ import { readdir, readFile, rm, writeFile } from 'fs/promises'
 import glob from 'glob'
 import { minify } from 'html-minifier-terser'
 import { cyan, gray, green, red, yellow } from 'kleur/colors'
-import * as lightningcss from 'lightningcss'
+import * as lightningCss from 'lightningcss'
 import md5Hex from 'md5-hex'
 import { parse, parseFragment, serialize } from 'parse5'
 import * as path from 'path'
@@ -274,19 +274,38 @@ async function buildLocalScripts(document: Node, file: string) {
 }
 
 function getCSSTargets() {
-  return lightningcss.browserslistToTargets(browserslist(bundleConfig.targets))
+  return lightningCss.browserslistToTargets(browserslist(bundleConfig.targets))
 }
 
 async function buildCSSFile(file: string, cssTargets = getCSSTargets()) {
   console.log(green(path.relative(process.cwd(), file)))
-  const result = await lightningcss.bundleAsync({
+  const result = await lightningCss.bundleAsync({
     filename: file,
     drafts: { nesting: true },
     targets: cssTargets,
     minify: !isWatchMode,
     sourceMap: isWatchMode,
+    errorRecovery: true,
     ...bundleConfig.lightningcss,
   })
+
+  if (result.warnings.length) {
+    console.warn('')
+    result.warnings.forEach(w => {
+      console.warn(red(w.type), w.message)
+      console.warn(
+        ' ',
+        gray(
+          baseRelative(w.loc.filename).slice(1) +
+            ':' +
+            w.loc.line +
+            ':' +
+            w.loc.column
+        )
+      )
+    })
+    console.warn('')
+  }
 
   const prevHash = cssEntries.get(file)
   const hash = md5Hex(result.code)
