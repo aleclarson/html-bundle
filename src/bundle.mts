@@ -339,6 +339,15 @@ async function buildCSSFile(
     minify: !options.watch,
     sourceMap: options.watch,
     errorRecovery: true,
+    resolver: {
+      resolve(specifier, originatingFile) {
+        if (/^\.\.?(\/|$)/.test(specifier)) {
+          return path.resolve(path.dirname(originatingFile), specifier)
+        }
+        // Assume bare imports are found in root node_modules.
+        return path.resolve('node_modules', specifier)
+      },
+    },
     ...bundleConfig.lightningCss,
     filename: file,
     drafts: {
