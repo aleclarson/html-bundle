@@ -499,9 +499,15 @@ async function packWebExtension(options: Options) {
         if (runOptions.binary) {
           argv.push('--chromium-binary', runOptions.binary)
         }
+        if (runOptions.profile) {
+          argv.push('--chromium-profile', runOptions.profile)
+        }
       } else {
         if (runOptions.binary) {
           argv.push('--firefox', runOptions.binary)
+        }
+        if (runOptions.profile) {
+          argv.push('--firefox-profile', runOptions.profile)
         }
         if (runOptions.devtools) {
           argv.push('--devtools')

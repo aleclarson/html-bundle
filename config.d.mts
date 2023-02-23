@@ -3,6 +3,7 @@ import * as htmlMinifierTerser from 'html-minifier-terser'
 
 export namespace WebExtension {
   type CommonRunOptions = {
+    profile?: string
     startUrl?: string | string[]
   }
 
