@@ -17,6 +17,7 @@ import * as chokidar from 'chokidar'
 import Critters from 'critters'
 import * as esbuild from 'esbuild'
 import importGlobPlugin from 'esbuild-plugin-import-glob'
+import metaUrlPlugin from 'esbuild-plugin-meta-url'
 import { execa, execaSync } from 'execa'
 import { existsSync } from 'fs'
 import { copyFile, readdir, readFile, rm, writeFile } from 'fs/promises'
@@ -323,6 +324,7 @@ async function buildLocalScripts(document: Node, file: string, flags: Flags) {
       outbase: bundleConfig.src,
       target: esTargets,
       plugins: [
+        metaUrlPlugin(),
         importGlobPlugin(),
         ...(esbuildOpts.plugins || []),
       ],

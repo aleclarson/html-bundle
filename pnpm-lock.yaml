@@ -19,6 +19,7 @@ specifiers:
   critters: ^0.0.16
   esbuild: ^0.17.3
   esbuild-plugin-import-glob: npm:@sirse-dev/esbuild-plugin-import-glob@0.0.1
+  esbuild-plugin-meta-url: npm:@chialab/esbuild-plugin-meta-url@^0.17.2
   execa: ^7.0.0
   glob: ^8.1.0
   html-minifier-terser: ^7.1.0
@@ -41,6 +42,7 @@ dependencies:
   critters: 0.0.16
   esbuild: 0.17.10
   esbuild-plugin-import-glob: /@sirse-dev/esbuild-plugin-import-glob/0.0.1_ijx3sq26ajkqpedfy52ny7tw6i
+  esbuild-plugin-meta-url: /@chialab/esbuild-plugin-meta-url/0.17.2
   execa: 7.0.0
   glob: 8.1.0
   html-minifier-terser: 7.1.0
@@ -272,6 +274,35 @@ packages:
       '@babel/helper-string-parser': 7.19.4
       '@babel/helper-validator-identifier': 7.19.1
       to-fast-properties: 2.0.0
+    dev: false
+
+  /@chialab/esbuild-plugin-meta-url/0.17.2:
+    resolution: {integrity: sha512-BGlitlhRUzKzyhozpyvAvE00FmpRXKe9gPs2uFPc9T6PmAunIPCYg4fTk/hqK/GZa75N+XH/+L+mkOhZkx/TDA==}
+    engines: {node: '>=13'}
+    dependencies:
+      '@chialab/esbuild-rna': 0.17.3
+      '@chialab/estransform': 0.17.3
+      '@chialab/node-resolve': 0.17.0
+    dev: false
+
+  /@chialab/esbuild-rna/0.17.3:
+    resolution: {integrity: sha512-LwPGDBeRnCNSkUfCEXYWKf7iORt6JCbmCLvEaeZnqle2Tm5yNRtZjCnQHdG9D4UpY9YQgrlZQnF785yOnKwL7Q==}
+    engines: {node: '>=13'}
+    dependencies:
+      '@chialab/estransform': 0.17.3
+      '@chialab/node-resolve': 0.17.0
+    dev: false
+
+  /@chialab/estransform/0.17.3:
+    resolution: {integrity: sha512-ZFCcDk85ZllhUiAMIzRFsLhrA2z8xwRyXyJBNMP/84+3czLEydSTzzBK9nXNGloOspwp+lL+EgPlFY8Ry693Bg==}
+    engines: {node: '>=13'}
+    dependencies:
+      '@parcel/source-map': 2.1.1
+    dev: false
+
+  /@chialab/node-resolve/0.17.0:
+    resolution: {integrity: sha512-u9VwO/0djjXsM70aH/Wrx0BrXjtjhfNOxaDks32xa1mZP9T0CXZ0be5Sv3hXI9g5UeJbfvCyFJS2hfJEu7Ifgg==}
+    engines: {node: '>=13'}
     dev: false
 
   /@esbuild/android-arm/0.17.10:
@@ -536,6 +567,13 @@ packages:
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.15.0
+    dev: false
+
+  /@parcel/source-map/2.1.1:
+    resolution: {integrity: sha512-Ejx1P/mj+kMjQb8/y5XxDUn4reGdr+WyKYloBljpppUy8gs42T+BNoEOuRYqDVdgPc6NxduzIDoJS9pOFfV5Ew==}
+    engines: {node: ^12.18.3 || >=14}
+    dependencies:
+      detect-libc: 1.0.3
     dev: false
 
   /@sirse-dev/esbuild-plugin-import-glob/0.0.1_ijx3sq26ajkqpedfy52ny7tw6i:
