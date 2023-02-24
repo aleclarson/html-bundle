@@ -4,11 +4,10 @@ import {
   appendChild,
   Attribute,
   createScript,
-  Element,
   findElement,
+  getAttribute,
   Node,
   ParentNode,
-  setAttribute,
 } from '@web/parse5-utils'
 import browserslist from 'browserslist'
 import browserslistToEsbuild from 'browserslist-to-esbuild'
@@ -292,23 +291,37 @@ async function buildHTML(file: string, flags: Flags) {
 }
 
 async function buildLocalScripts(document: Node, file: string, flags: Flags) {
-  const entryScripts: { node: Element; srcAttr: Attribute; srcPath: string }[] =
-    []
+  const entryScriptsByOutPath: Record<string, any> = {}
+  const entryScripts: {
+    srcPath: string
+    outPath: string
+    isModule: boolean
+  }[] = []
+
   for (const scriptNode of findExternalScripts(document)) {
     const srcAttr = scriptNode.attrs.find(a => a.name === 'src')
     if (srcAttr?.value.startsWith('./')) {
-      entryScripts.push({
-        node: scriptNode,
-        srcAttr,
-        srcPath: path.join(path.dirname(file), srcAttr.value),
-      })
+      const srcPath = path.join(path.dirname(file), srcAttr.value)
+      console.log(green(baseRelative(srcPath)))
+      const outPath = getBuildPath(srcPath).replace(/\.[tj]sx?$/, '.js')
+      srcAttr.value = baseRelative(outPath)
+      entryScripts.push(
+        (entryScriptsByOutPath[outPath] = {
+          srcPath,
+          outPath,
+          isModule: getAttribute(scriptNode, 'type') === 'module',
+        })
+      )
     }
   }
-  const esTargets = browserslistToEsbuild(bundleConfig.targets)
+
   if (flags.watch) {
     compiledScripts = {}
   }
+
+  const targets = browserslistToEsbuild(bundleConfig.targets)
   const esbuildOpts = bundleConfig.esbuild
+
   try {
     const { outputFiles } = await esbuild.build({
       format: 'esm',
@@ -322,10 +335,10 @@ async function buildLocalScripts(document: Node, file: string, flags: Flags) {
       entryPoints: entryScripts.map(script => script.srcPath),
       outdir: bundleConfig.build,
       outbase: bundleConfig.src,
-      target: esTargets,
+      target: targets,
       plugins: [
-        metaUrlPlugin(),
         importGlobPlugin(),
+        metaUrlPlugin(),
         ...(esbuildOpts.plugins || []),
       ],
       define: {
@@ -333,23 +346,29 @@ async function buildLocalScripts(document: Node, file: string, flags: Flags) {
         ...esbuildOpts.define,
       },
     })
-    for (const script of entryScripts) {
-      console.log(green(baseRelative(script.srcPath)))
-      const outPath = getBuildPath(script.srcPath).replace(/\.[tj]sx?$/, '.js')
-      script.srcAttr.value = baseRelative(outPath)
-      if (flags.watch) {
-        setAttribute(script.node, 'type', 'module')
-      }
-    }
     if (flags.watch) {
       await Promise.all(
-        outputFiles!.map(file => {
+        outputFiles!.map(async file => {
+          await createDir(file.path)
+
           const uri = baseRelative(file.path)
           compiledScripts[uri] = file.text
-          return writeFile(
-            file.path,
-            `await import("http://localhost:5000${uri}")`
-          )
+
+          const entryScript = entryScriptsByOutPath[file.path]
+          const isModule = entryScript
+            ? entryScript.isModule
+            : /^(import|export) /m.test(file.text)
+
+          if (isModule) {
+            await writeFile(
+              file.path,
+              `await import("http://localhost:5000${uri}")`
+            )
+          } else {
+            // Either a worker script or a non-module entry point.
+            // These require an extension reload if changed.
+            await writeFile(file.path, file.text)
+          }
         })
       )
     }
