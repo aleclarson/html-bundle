@@ -55,7 +55,7 @@ cli
   .command('')
   .option('--watch', `[boolean]`)
   .option('--critical', `[boolean]`, { default: bundleConfig.isCritical })
-  .option('--webext', 'Set webext options')
+  .option('--webext <target>', 'Override webext config')
   .action(async options => {
     glob(`${bundleConfig.src}/**/*.html`, (err, files) => {
       if (err) {
@@ -69,32 +69,30 @@ cli
 
 cli.parse()
 
-interface Options {
+interface Flags {
   watch?: boolean
   critical?: boolean
-  webext?: {
-    target?: Extract<WebExtension.RunOption, string>
-  }
+  webext?: WebExtension.RunOption
 }
 
-async function build(files: string[], options: Options) {
+async function build(files: string[], flags: Flags) {
   if (bundleConfig.deletePrev) {
     await rm(bundleConfig.build, { force: true, recursive: true })
   }
 
   const timer = performance.now()
   files = files.map(file => path.resolve(file))
-  await Promise.all(files.map(file => buildHTML(file, options)))
+  await Promise.all(files.map(file => buildHTML(file, flags)))
   console.log(
     cyan('build complete in %sms'),
     (performance.now() - timer).toFixed(2)
   )
 
-  if (bundleConfig.webext) {
-    await packWebExtension(options)
+  if (flags.webext || bundleConfig.webext) {
+    await packWebExtension(flags)
   }
 
-  if (options.watch) {
+  if (flags.watch) {
     const wss = new ws.WebSocketServer({ port: 5001 })
     wss.on('connection', ws => {
       hmrClients.add(ws)
@@ -144,7 +142,7 @@ async function build(files: string[], options: Options) {
       changedFiles.clear()
       if (isHtmlUpdate) {
         const timer = performance.now()
-        await Promise.all(files.map(file => buildHTML(file, options)))
+        await Promise.all(files.map(file => buildHTML(file, flags)))
         const fullReload = JSON.stringify({ type: 'full-reload' })
         hmrClients.forEach(client => client.send(fullReload))
         console.log(
@@ -156,10 +154,7 @@ async function build(files: string[], options: Options) {
         await Promise.all(
           Array.from(cssEntries.keys(), async (file, i) => {
             if (existsSync(file)) {
-              const { changed, outFile, code } = await buildCSSFile(
-                file,
-                options
-              )
+              const { changed, outFile, code } = await buildCSSFile(file, flags)
               if (changed) {
                 hmrUpdates[i] = JSON.stringify({
                   type: 'css',
@@ -193,7 +188,7 @@ function parseHTML(html: string) {
   ) as ParentNode
 }
 
-async function buildHTML(file: string, options: Options) {
+async function buildHTML(file: string, flags: Flags) {
   let html = await readFile(file, 'utf8')
   if (!html) return
 
@@ -201,11 +196,11 @@ async function buildHTML(file: string, options: Options) {
 
   const document = parseHTML(html)
   await Promise.all([
-    buildLocalScripts(document, file, options),
-    buildLocalStyles(document, file, options),
+    buildLocalScripts(document, file, flags),
+    buildLocalStyles(document, file, flags),
   ])
 
-  if (options.watch) {
+  if (flags.watch) {
     const hmrClientCode = await getHMRClient()
     const hmrClientPath = path.resolve(bundleConfig.build, 'hmr.mjs')
     await writeFile(hmrClientPath, hmrClientCode)
@@ -219,7 +214,7 @@ async function buildHTML(file: string, options: Options) {
 
   html = serialize(document)
 
-  if (!options.watch) {
+  if (!flags.watch) {
     try {
       html = await minify(html, {
         collapseWhitespace: true,
@@ -230,7 +225,7 @@ async function buildHTML(file: string, options: Options) {
       console.error(e)
     }
 
-    if (options.critical) {
+    if (flags.critical) {
       try {
         const isPartical = !html.startsWith('<!DOCTYPE html>')
         html = await critters.process(html)
@@ -331,14 +326,14 @@ function getCSSTargets() {
 
 async function buildCSSFile(
   file: string,
-  options: Options,
+  flags: Flags,
   cssTargets = getCSSTargets()
 ) {
   console.log(green(baseRelative(file)))
   const result = await lightningCss.bundleAsync({
     targets: cssTargets,
-    minify: !options.watch,
-    sourceMap: options.watch,
+    minify: !flags.watch,
+    sourceMap: flags.watch,
     errorRecovery: true,
     resolver: {
       resolve(specifier, originatingFile) {
@@ -389,11 +384,7 @@ async function buildCSSFile(
   return { ...result, changed: hash != prevHash, outFile }
 }
 
-async function buildLocalStyles(
-  document: Node,
-  file: string,
-  options: Options
-) {
+async function buildLocalStyles(document: Node, file: string, flags: Flags) {
   const entryStyles: { srcAttr: Attribute; srcPath: string }[] = []
   for (const styleNode of findStyleSheets(document)) {
     const srcAttr = styleNode.attrs.find(a => a.name === 'href')
@@ -407,7 +398,7 @@ async function buildLocalStyles(
   const cssTargets = getCSSTargets()
   await Promise.all(
     entryStyles.map(style =>
-      buildCSSFile(style.srcPath, options, cssTargets)
+      buildCSSFile(style.srcPath, flags, cssTargets)
         .then(async result => {
           style.srcAttr.value = baseRelative(result.outFile)
         })
