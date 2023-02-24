@@ -4,6 +4,8 @@ import * as htmlMinifierTerser from 'html-minifier-terser'
 export namespace WebExtension {
   type CommonRunOptions = {
     profile?: string
+    /** @default true */
+    reload?: boolean
     startUrl?: string | string[]
   }
 
@@ -12,6 +14,7 @@ export namespace WebExtension {
     binary?: 'firefox' | 'beta' | 'nightly' | 'deved' | (string & {})
     devtools?: boolean
     browserConsole?: boolean
+    preInstall?: boolean
   }
 
   type ChromiumRunOptions = CommonRunOptions & {
@@ -27,9 +30,6 @@ export namespace WebExtension {
     | ChromiumRunOptions
 
   export type Options = {
-    /** @default true */
-    reload?: boolean
-    preInstall?: boolean
     run?: RunOption[]
   }
 }

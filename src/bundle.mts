@@ -37,6 +37,7 @@ import {
   findStyleSheets,
   getBuildPath,
   relative,
+  resolveHome,
   toArray,
 } from './utils.mjs'
 
@@ -438,7 +439,7 @@ function getHMRClient() {
   })())
 }
 
-async function packWebExtension(options: Options) {
+async function packWebExtension(flags: Flags) {
   if (execaSync('which', ['web-ext']).exitCode != 0) {
     return console.error(
       red('web-ext not found.'),
@@ -471,49 +472,61 @@ async function packWebExtension(options: Options) {
   const procs: string[][] = []
 
   let argv: string[] = []
-  if (options.watch) {
-    argv.push('run')
+  if (flags.watch) {
+    const webextConfig = bundleConfig.webext || {}
+    const webextFlag = flags.webext
 
-    const extConfig = { ...bundleConfig.webext, ...options.webext }
-    if (extConfig.preInstall) {
-      argv.push('--pre-install')
-    } else if (extConfig.reload == false) {
-      argv.push('--no-reload')
+    let runTargets = toArray(
+      (typeof webextFlag != 'string' && webextFlag) || webextConfig.run
+    ).filter(Boolean) as WebExtension.RunOption[]
+
+    if (typeof webextFlag == 'string') {
+      runTargets = runTargets.filter(t =>
+        (typeof t == 'string' ? t : t.target).startsWith(webextFlag)
+      )
+    } else if (runTargets.length == 0) {
+      runTargets.push('chromium')
     }
-    argv.push('--watch-ignored', ...ignoredFiles)
 
-    const runTargets = toArray(
-      options.webext?.target || extConfig.run || 'chromium'
-    ).filter(Boolean)
-
-    const sharedArgv = argv
     for (const runTarget of runTargets) {
       const runOptions: Exclude<WebExtension.RunOption, string> =
         typeof runTarget == 'string' ? { target: runTarget } : runTarget
 
-      argv = [...sharedArgv]
+      argv = ['run']
       procs.push(argv)
+
+      if (runOptions.reload != false) {
+        argv.push('--watch-ignored', ...ignoredFiles)
+      }
 
       argv.push('--target', runOptions.target)
       if (runOptions.target == 'chromium') {
         if (runOptions.binary) {
-          argv.push('--chromium-binary', runOptions.binary)
+          argv.push('--chromium-binary', resolveHome(runOptions.binary))
         }
         if (runOptions.profile) {
-          argv.push('--chromium-profile', runOptions.profile)
+          argv.push('--chromium-profile', resolveHome(runOptions.profile))
+        }
+        if (runOptions.reload == false) {
+          argv.push('--watch-file', 'manifest.json')
         }
       } else {
         if (runOptions.binary) {
-          argv.push('--firefox', runOptions.binary)
+          argv.push('--firefox', resolveHome(runOptions.binary))
         }
         if (runOptions.profile) {
-          argv.push('--firefox-profile', runOptions.profile)
+          argv.push('--firefox-profile', resolveHome(runOptions.profile))
         }
         if (runOptions.devtools) {
           argv.push('--devtools')
         }
         if (runOptions.browserConsole) {
           argv.push('--browser-console')
+        }
+        if (runOptions.preInstall) {
+          argv.push('--pre-install')
+        } else if (runOptions.reload == false) {
+          argv.push('--watch-file', 'manifest.json')
         }
       }
 
@@ -541,7 +554,7 @@ async function packWebExtension(options: Options) {
     )
   )
 
-  if (!options.watch) {
+  if (!flags.watch) {
     await packing
   }
 }

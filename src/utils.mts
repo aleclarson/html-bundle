@@ -51,6 +51,13 @@ export function toArray<T>(value: T | T[]) {
   return Array.isArray(value) ? value : [value]
 }
 
+export function resolveHome(file: string) {
+  if (file.startsWith('~')) {
+    file = path.join(process.env.HOME || '', file.slice(1))
+  }
+  return file
+}
+
 export function baseRelative(file: string) {
   return '/' + path.relative(process.cwd(), file)
 }
