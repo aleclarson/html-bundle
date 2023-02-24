@@ -4,9 +4,11 @@ import {
   appendChild,
   Attribute,
   createScript,
+  Element,
   findElement,
   Node,
   ParentNode,
+  setAttribute,
 } from '@web/parse5-utils'
 import browserslist from 'browserslist'
 import browserslistToEsbuild from 'browserslist-to-esbuild'
@@ -20,6 +22,7 @@ import { existsSync } from 'fs'
 import { copyFile, readdir, readFile, rm, writeFile } from 'fs/promises'
 import glob from 'glob'
 import { minify } from 'html-minifier-terser'
+import http from 'http'
 import { cyan, gray, green, red, yellow } from 'kleur/colors'
 import * as lightningCss from 'lightningcss'
 import md5Hex from 'md5-hex'
@@ -48,6 +51,7 @@ const critters = new Critters({
 
 const hmrClients = new Set<ws.WebSocket>()
 const cssEntries = new Map<string, string>()
+let compiledScripts: Record<string, string>
 
 const cli = cac('html-bundle')
 
@@ -93,6 +97,23 @@ async function build(files: string[], flags: Flags) {
   }
 
   if (flags.watch) {
+    http
+      .createServer((req, res) => {
+        const { pathname: url } = new URL(req.url!, 'http://localhost:5000')
+        if (url.endsWith('.js')) {
+          if (!compiledScripts[url]) {
+            res.statusCode = 404
+            console.log('Unknown script:', url)
+          } else {
+            res.setHeader('Content-Type', 'application/javascript')
+            res.setHeader('Cache-Control', 'no-store')
+            res.write(compiledScripts[url])
+          }
+          res.end()
+        }
+      })
+      .listen(5000)
+
     const wss = new ws.WebSocketServer({ port: 5001 })
     wss.on('connection', ws => {
       hmrClients.add(ws)
@@ -269,55 +290,70 @@ async function buildHTML(file: string, flags: Flags) {
   return html
 }
 
-async function buildLocalScripts(
-  document: Node,
-  file: string,
-  options: Options
-) {
-  const entryScripts: { srcAttr: Attribute; srcPath: string }[] = []
+async function buildLocalScripts(document: Node, file: string, flags: Flags) {
+  const entryScripts: { node: Element; srcAttr: Attribute; srcPath: string }[] =
+    []
   for (const scriptNode of findExternalScripts(document)) {
     const srcAttr = scriptNode.attrs.find(a => a.name === 'src')
     if (srcAttr?.value.startsWith('./')) {
       entryScripts.push({
+        node: scriptNode,
         srcAttr,
         srcPath: path.join(path.dirname(file), srcAttr.value),
       })
     }
   }
   const esTargets = browserslistToEsbuild(bundleConfig.targets)
-  await Promise.all(
-    entryScripts.map(script => {
-      console.log(green(baseRelative(script.srcPath)))
-      const esbuildOpts = bundleConfig.esbuild
-      return esbuild
-        .build({
-          format: 'esm',
-          charset: 'utf8',
-          sourcemap: options.watch ? 'inline' : false,
-          splitting: true,
-          minify: !options.watch,
-          ...esbuildOpts,
-          bundle: true,
-          entryPoints: [script.srcPath],
-          outdir: bundleConfig.build,
-          outbase: bundleConfig.src,
-          target: esTargets,
-          plugins: [importGlobPlugin(), ...(esbuildOpts.plugins || [])],
-          define: {
-            'process.env.NODE_ENV': `"${process.env.NODE_ENV}"`,
-            ...esbuildOpts.define,
-          },
-        })
-        .then(() => {
-          const outPath = getBuildPath(script.srcPath).replace(
-            /\.[tj]sx?$/,
-            '.js'
-          )
-          script.srcAttr.value = baseRelative(outPath)
-        })
-        .catch(console.error)
+  if (flags.watch) {
+    compiledScripts = {}
+  }
+  const esbuildOpts = bundleConfig.esbuild
+  try {
+    const { outputFiles } = await esbuild.build({
+      format: 'esm',
+      charset: 'utf8',
+      sourcemap: flags.watch ? 'inline' : false,
+      splitting: true,
+      minify: !flags.watch,
+      ...esbuildOpts,
+      write: !flags.watch,
+      bundle: true,
+      entryPoints: entryScripts.map(script => script.srcPath),
+      outdir: bundleConfig.build,
+      outbase: bundleConfig.src,
+      target: esTargets,
+      plugins: [
+        importGlobPlugin(),
+        ...(esbuildOpts.plugins || []),
+      ],
+      define: {
+        'process.env.NODE_ENV': `"${process.env.NODE_ENV}"`,
+        ...esbuildOpts.define,
+      },
     })
-  )
+    for (const script of entryScripts) {
+      console.log(green(baseRelative(script.srcPath)))
+      const outPath = getBuildPath(script.srcPath).replace(/\.[tj]sx?$/, '.js')
+      script.srcAttr.value = baseRelative(outPath)
+      if (flags.watch) {
+        setAttribute(script.node, 'type', 'module')
+      }
+    }
+    if (flags.watch) {
+      await Promise.all(
+        outputFiles!.map(file => {
+          const uri = baseRelative(file.path)
+          compiledScripts[uri] = file.text
+          return writeFile(
+            file.path,
+            `await import("http://localhost:5000${uri}")`
+          )
+        })
+      )
+    }
+  } catch (e) {
+    console.error(e)
+  }
 }
 
 function getCSSTargets() {
