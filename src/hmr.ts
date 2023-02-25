@@ -1,30 +1,21 @@
 /// <reference lib="dom" />
 
-declare const browser: {
-  runtime: {
-    id: string
-    getURL: (path: string) => URL
-    reload: () => Promise<void>
-  }
+type Browser = {
+  runtime: { reload: () => Promise<void> }
 }
+
+declare const browser: Browser | undefined
+declare const chrome: Browser | undefined
 
 function connect() {
   const ws = new WebSocket('ws://localhost:5001')
-  ws.onopen = () => {
-    console.log('[HMR] connected')
-  }
-  ws.onclose = () => {
-    console.log('[HMR] disconnected')
-    setTimeout(connect, 1000)
-  }
-  ws.onerror = () => {
-    setTimeout(connect, 1000)
-  }
   ws.onmessage = async ({ data }) => {
     const update = JSON.parse(data)
     if (update.type === 'full-reload') {
       if (typeof browser !== 'undefined') {
         await browser.runtime.reload()
+      } else if (typeof chrome !== 'undefined') {
+        await chrome.runtime.reload()
       } else {
         location.reload()
       }
@@ -43,6 +34,34 @@ function connect() {
         prevStyle.remove()
       }
     }
+  }
+
+  let connected = false
+  ws.onopen = () => {
+    if (!connected) {
+      console.log('[HMR] connected')
+      connected = true
+
+      if (/extension/.test(location.protocol)) {
+        ws.send(
+          JSON.stringify({
+            type: 'webext:uuid',
+            protocol: location.protocol,
+            id: location.hostname,
+          })
+        )
+      }
+    }
+  }
+  ws.onclose = () => {
+    if (connected) {
+      console.log('[HMR] disconnected')
+      connected = false
+    }
+    setTimeout(connect, 1000)
+  }
+  ws.onerror = () => {
+    setTimeout(connect, 1000)
   }
 }
 

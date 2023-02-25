@@ -51,8 +51,10 @@ export function toArray<T>(value: T | T[]) {
   return Array.isArray(value) ? value : [value]
 }
 
-export function resolveHome(file: string) {
-  if (file.startsWith('~')) {
+export function resolveHome(file: string): string
+export function resolveHome(file: string | undefined): string | undefined
+export function resolveHome(file: string | undefined) {
+  if (file?.startsWith('~')) {
     file = path.join(process.env.HOME || '', file.slice(1))
   }
   return file

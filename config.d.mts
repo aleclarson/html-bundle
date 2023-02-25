@@ -2,35 +2,37 @@ import * as esbuild from 'esbuild'
 import * as htmlMinifierTerser from 'html-minifier-terser'
 
 export namespace WebExtension {
-  type CommonRunOptions = {
-    profile?: string
-    /** @default true */
-    reload?: boolean
-    startUrl?: string | string[]
+  type Config = {
+    artifactsDir?: string
+    run?: RunOptions
   }
 
-  type FirefoxRunOptions = CommonRunOptions & {
-    target: 'firefox-desktop' | 'firefox-android'
+  type RunTarget = 'firefox-desktop' | 'firefox-android' | 'chromium'
+
+  type RunOptions = {
+    target?: RunTarget | RunTarget[]
+    startUrl?: string | string[]
+    firefox?: FirefoxRunOptions
+    chromium?: ChromiumRunOptions
+    reload?: boolean
+    keepProfileChanges?: boolean
+  }
+
+  type FirefoxRunOptions = {
     binary?: 'firefox' | 'beta' | 'nightly' | 'deved' | (string & {})
+    profile?: string
+    keepProfileChanges?: boolean
     devtools?: boolean
     browserConsole?: boolean
     preInstall?: boolean
+    args?: string[]
   }
 
-  type ChromiumRunOptions = CommonRunOptions & {
-    target: 'chromium'
+  type ChromiumRunOptions = {
     binary?: string
-  }
-
-  type RunOption =
-    | 'firefox-desktop'
-    | 'firefox-android'
-    | 'chromium'
-    | FirefoxRunOptions
-    | ChromiumRunOptions
-
-  export type Options = {
-    run?: RunOption[]
+    profile?: string
+    keepProfileChanges?: boolean
+    args?: string[]
   }
 }
 
@@ -40,7 +42,7 @@ export type Config = {
   build: string
   targets: string
   /** @see https://extensionworkshop.com/documentation/develop/web-ext-command-reference/#web-ext-run */
-  webext?: boolean | WebExtension.Options
+  webext?: boolean | WebExtension.Config
   esbuild: esbuild.BuildOptions
   lightningCss: any
   htmlMinifierTerser: htmlMinifierTerser.Options

@@ -17,13 +17,11 @@ import Critters from 'critters'
 import * as esbuild from 'esbuild'
 import importGlobPlugin from 'esbuild-plugin-import-glob'
 import metaUrlPlugin from 'esbuild-plugin-meta-url'
-import { execa, execaSync } from 'execa'
 import { existsSync } from 'fs'
 import { copyFile, readdir, readFile, rm, writeFile } from 'fs/promises'
 import glob from 'glob'
 import { minify } from 'html-minifier-terser'
-import http from 'http'
-import { cyan, gray, green, red, yellow } from 'kleur/colors'
+import { cyan, gray, red, yellow } from 'kleur/colors'
 import * as lightningCss from 'lightningcss'
 import md5Hex from 'md5-hex'
 import { parse, parseFragment, serialize } from 'parse5'
@@ -32,6 +30,7 @@ import { performance } from 'perf_hooks'
 import { debounce } from 'ts-debounce'
 import * as ws from 'ws'
 import { WebExtension } from '../config.mjs'
+import { buildEvents, hmrClientEvents } from './events.mjs'
 import {
   baseRelative,
   bundleConfig,
@@ -40,9 +39,8 @@ import {
   findStyleSheets,
   getBuildPath,
   relative,
-  resolveHome,
-  toArray,
 } from './utils.mjs'
+import { enableWebExtension } from './webext.mjs'
 
 const critters = new Critters({
   path: bundleConfig.build,
@@ -51,7 +49,6 @@ const critters = new Critters({
 
 const hmrClients = new Set<ws.WebSocket>()
 const cssEntries = new Map<string, string>()
-let compiledScripts: Record<string, string>
 
 const cli = cac('html-bundle')
 
@@ -73,10 +70,10 @@ cli
 
 cli.parse()
 
-interface Flags {
+export interface Flags {
   watch?: boolean
   critical?: boolean
-  webext?: WebExtension.RunOption
+  webext?: WebExtension.RunTarget | WebExtension.RunTarget[]
 }
 
 async function build(files: string[], flags: Flags) {
@@ -93,31 +90,18 @@ async function build(files: string[], flags: Flags) {
   )
 
   if (flags.webext || bundleConfig.webext) {
-    await packWebExtension(flags)
+    await enableWebExtension(flags)
   }
 
   if (flags.watch) {
-    http
-      .createServer((req, res) => {
-        const { pathname: url } = new URL(req.url!, 'http://localhost:5000')
-        if (url.endsWith('.js')) {
-          if (!compiledScripts[url]) {
-            res.statusCode = 404
-            console.log('Unknown script:', url)
-          } else {
-            res.setHeader('Content-Type', 'application/javascript')
-            res.setHeader('Cache-Control', 'no-store')
-            res.write(compiledScripts[url])
-          }
-          res.end()
-        }
-      })
-      .listen(5000)
-
     const wss = new ws.WebSocketServer({ port: 5001 })
     wss.on('connection', ws => {
       hmrClients.add(ws)
       ws.on('close', () => hmrClients.delete(ws))
+      ws.on('message', data => {
+        const { type, ...event } = JSON.parse(data.toString())
+        hmrClientEvents.emit(type, event)
+      })
     })
 
     const watcher = chokidar.watch(bundleConfig.src, { ignoreInitial: true })
@@ -162,12 +146,14 @@ async function build(files: string[], flags: Flags) {
       })
       changedFiles.clear()
       if (isHtmlUpdate) {
+        buildEvents.emit('will-rebuild')
         const timer = performance.now()
         await Promise.all(files.map(file => buildHTML(file, flags)))
         const fullReload = JSON.stringify({ type: 'full-reload' })
         hmrClients.forEach(client => client.send(fullReload))
+        buildEvents.emit('rebuild')
         console.log(
-          gray('build complete in %sms'),
+          cyan('build complete in %sms'),
           (performance.now() - timer).toFixed(2)
         )
       } else if (isHotUpdate && hmrClients.size) {
@@ -264,6 +250,7 @@ async function buildHTML(file: string, flags: Flags) {
   await writeFile(outFile, html)
 
   if (bundleConfig.copy) {
+    let copied = 0
     for (const path of bundleConfig.copy) {
       if (glob.hasMagic(path)) {
         glob(path, (err, files) => {
@@ -271,20 +258,21 @@ async function buildHTML(file: string, flags: Flags) {
             console.error(err)
           } else {
             files.forEach(async file => {
-              console.log(cyan('copy'), baseRelative(file))
               const outPath = getBuildPath(path)
               await createDir(outPath)
               await copyFile(file, outPath)
+              copied++
             })
           }
         })
       } else {
-        console.log(cyan('copy'), baseRelative(path))
         const outPath = getBuildPath(path)
         await createDir(outPath)
         await copyFile(path, outPath)
+        copied++
       }
     }
+    console.log(cyan('copied %s %s'), copied, copied == 1 ? 'file' : 'files')
   }
 
   return html
@@ -302,7 +290,7 @@ async function buildLocalScripts(document: Node, file: string, flags: Flags) {
     const srcAttr = scriptNode.attrs.find(a => a.name === 'src')
     if (srcAttr?.value.startsWith('./')) {
       const srcPath = path.join(path.dirname(file), srcAttr.value)
-      console.log(green(baseRelative(srcPath)))
+      console.log(yellow('⌁'), baseRelative(srcPath))
       const outPath = getBuildPath(srcPath).replace(/\.[tj]sx?$/, '.js')
       srcAttr.value = baseRelative(outPath)
       entryScripts.push(
@@ -315,30 +303,25 @@ async function buildLocalScripts(document: Node, file: string, flags: Flags) {
     }
   }
 
-  if (flags.watch) {
-    compiledScripts = {}
-  }
-
   const targets = browserslistToEsbuild(bundleConfig.targets)
   const esbuildOpts = bundleConfig.esbuild
 
   try {
-    const { outputFiles } = await esbuild.build({
+    await esbuild.build({
       format: 'esm',
       charset: 'utf8',
-      sourcemap: flags.watch ? 'inline' : false,
       splitting: true,
+      sourcemap: flags.watch,
       minify: !flags.watch,
       ...esbuildOpts,
-      write: !flags.watch,
       bundle: true,
       entryPoints: entryScripts.map(script => script.srcPath),
       outdir: bundleConfig.build,
       outbase: bundleConfig.src,
       target: targets,
       plugins: [
-        importGlobPlugin(),
         metaUrlPlugin(),
+        importGlobPlugin(),
         ...(esbuildOpts.plugins || []),
       ],
       define: {
@@ -346,32 +329,6 @@ async function buildLocalScripts(document: Node, file: string, flags: Flags) {
         ...esbuildOpts.define,
       },
     })
-    if (flags.watch) {
-      await Promise.all(
-        outputFiles!.map(async file => {
-          await createDir(file.path)
-
-          const uri = baseRelative(file.path)
-          compiledScripts[uri] = file.text
-
-          const entryScript = entryScriptsByOutPath[file.path]
-          const isModule = entryScript
-            ? entryScript.isModule
-            : /^(import|export) /m.test(file.text)
-
-          if (isModule) {
-            await writeFile(
-              file.path,
-              `await import("http://localhost:5000${uri}")`
-            )
-          } else {
-            // Either a worker script or a non-module entry point.
-            // These require an extension reload if changed.
-            await writeFile(file.path, file.text)
-          }
-        })
-      )
-    }
   } catch (e) {
     console.error(e)
   }
@@ -382,11 +339,11 @@ function getCSSTargets() {
 }
 
 async function buildCSSFile(
-  file: string,
+  srcPath: string,
   flags: Flags,
   cssTargets = getCSSTargets()
 ) {
-  console.log(green(baseRelative(file)))
+  console.log(yellow('⌁'), baseRelative(srcPath))
   const result = await lightningCss.bundleAsync({
     targets: cssTargets,
     minify: !flags.watch,
@@ -402,7 +359,7 @@ async function buildCSSFile(
       },
     },
     ...bundleConfig.lightningCss,
-    filename: file,
+    filename: srcPath,
     drafts: {
       nesting: true,
       ...bundleConfig.lightningCss?.drafts,
@@ -427,11 +384,11 @@ async function buildCSSFile(
     console.warn('')
   }
 
-  const prevHash = cssEntries.get(file)
+  const prevHash = cssEntries.get(srcPath)
   const hash = md5Hex(result.code)
-  cssEntries.set(file, hash)
+  cssEntries.set(srcPath, hash)
 
-  const outFile = getBuildPath(file)
+  const outFile = getBuildPath(srcPath)
   await createDir(outFile)
   await writeFile(outFile, result.code)
   if (result.map) {
@@ -485,124 +442,4 @@ function getHMRClient() {
         return result.outputFiles[0].text
       })
   })())
-}
-
-async function packWebExtension(flags: Flags) {
-  if (execaSync('which', ['web-ext']).exitCode != 0) {
-    return console.error(
-      red('web-ext not found.'),
-      'Please install it with `npm i -g web-ext`'
-    )
-  }
-
-  const ignoredFiles = new Set(await readdir(process.cwd()))
-  const keepFile = (file: unknown) =>
-    typeof file == 'string' && ignoredFiles.delete(file.split('/')[0])
-  const keepFiles = (arg: any) =>
-    typeof arg == 'string'
-      ? keepFile(arg)
-      : Array.isArray(arg)
-      ? arg.forEach(keepFiles)
-      : arg && Object.values(arg).forEach(keepFiles)
-
-  keepFile(bundleConfig.build)
-  keepFile('manifest.json')
-  keepFile('public')
-
-  const manifest = JSON.parse(await readFile('manifest.json', 'utf8'))
-  keepFile(manifest.browser_action?.default_popup)
-  keepFiles(manifest.background?.scripts)
-  keepFiles(manifest.browser_action?.default_icon)
-  keepFiles(manifest.chrome_url_overrides)
-  keepFiles(manifest.content_scripts)
-  keepFiles(manifest.icons)
-
-  const procs: string[][] = []
-
-  let argv: string[] = []
-  if (flags.watch) {
-    const webextConfig = bundleConfig.webext || {}
-    const webextFlag = flags.webext
-
-    let runTargets = toArray(
-      (typeof webextFlag != 'string' && webextFlag) || webextConfig.run
-    ).filter(Boolean) as WebExtension.RunOption[]
-
-    if (typeof webextFlag == 'string') {
-      runTargets = runTargets.filter(t =>
-        (typeof t == 'string' ? t : t.target).startsWith(webextFlag)
-      )
-    } else if (runTargets.length == 0) {
-      runTargets.push('chromium')
-    }
-
-    for (const runTarget of runTargets) {
-      const runOptions: Exclude<WebExtension.RunOption, string> =
-        typeof runTarget == 'string' ? { target: runTarget } : runTarget
-
-      argv = ['run']
-      procs.push(argv)
-
-      if (runOptions.reload != false) {
-        argv.push('--watch-ignored', ...ignoredFiles)
-      }
-
-      argv.push('--target', runOptions.target)
-      if (runOptions.target == 'chromium') {
-        if (runOptions.binary) {
-          argv.push('--chromium-binary', resolveHome(runOptions.binary))
-        }
-        if (runOptions.profile) {
-          argv.push('--chromium-profile', resolveHome(runOptions.profile))
-        }
-        if (runOptions.reload == false) {
-          argv.push('--watch-file', 'manifest.json')
-        }
-      } else {
-        if (runOptions.binary) {
-          argv.push('--firefox', resolveHome(runOptions.binary))
-        }
-        if (runOptions.profile) {
-          argv.push('--firefox-profile', resolveHome(runOptions.profile))
-        }
-        if (runOptions.devtools) {
-          argv.push('--devtools')
-        }
-        if (runOptions.browserConsole) {
-          argv.push('--browser-console')
-        }
-        if (runOptions.preInstall) {
-          argv.push('--pre-install')
-        } else if (runOptions.reload == false) {
-          argv.push('--watch-file', 'manifest.json')
-        }
-      }
-
-      let startUrl = runOptions.startUrl
-      if (startUrl) {
-        if (!Array.isArray(startUrl)) {
-          startUrl = [startUrl]
-        }
-        startUrl.forEach(url => argv.push('--start-url', url))
-      }
-    }
-  } else {
-    argv.push('build', '-o', '--ignore-files', ...ignoredFiles)
-  }
-
-  if (!procs.length) {
-    procs.push(argv)
-  }
-
-  const packing = Promise.all(
-    procs.map(argv =>
-      execa('web-ext', argv, {
-        stdio: options.watch ? 'ignore' : 'inherit',
-      })
-    )
-  )
-
-  if (!flags.watch) {
-    await packing
-  }
 }

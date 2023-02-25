@@ -23,10 +23,12 @@
   "prettier": "@alloc/prettier-config",
   "devDependencies": {
     "@alloc/prettier-config": "^1.0.0",
+    "@types/chrome-remote-interface": "^0.31.9",
     "@types/glob": "^8.0.0",
     "@types/html-minifier-terser": "^7.0.0",
     "@types/parse5": "6",
     "@types/ws": "^8.5.4",
+    "chrome-launcher": "^0.15.1",
     "prettier": "^2.8.4",
     "typescript": "^4.9.4"
   },
@@ -36,9 +38,11 @@
     "browserslist-to-esbuild": "^1.2.0",
     "cac": "^6.7.14",
     "chokidar": "^3.5.3",
+    "chrome-remote-interface": "^0.32.1",
     "critters": "^0.0.16",
+    "devtools-protocol": "^0.0.1109433",
     "esbuild": "^0.17.3",
-    "esbuild-plugin-import-glob": "npm:@sirse-dev/esbuild-plugin-import-glob@0.0.1",
+    "esbuild-plugin-import-glob": "npm:@alloc/esbuild-plugin-import-glob@^0.1.4",
     "esbuild-plugin-meta-url": "npm:@chialab/esbuild-plugin-meta-url@^0.17.2",
     "execa": "^7.0.0",
     "glob": "^8.1.0",
@@ -49,11 +53,12 @@
     "parse5": "^6.0.1",
     "ts-debounce": "^4.0.0",
     "unconfig": "^0.3.7",
+    "web-ext": "^7.5.0",
     "ws": "^8.12.1"
   },
   "pnpm": {
     "patchedDependencies": {
-      "@sirse-dev/esbuild-plugin-import-glob@0.0.1": "patches/@sirse-dev__esbuild-plugin-import-glob@0.0.1.patch"
+      "@chialab/esbuild-plugin-meta-url@0.17.2": "patches/@chialab__esbuild-plugin-meta-url@0.17.2.patch"
     }
   }
 }
