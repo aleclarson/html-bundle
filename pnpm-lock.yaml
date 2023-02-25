@@ -25,6 +25,7 @@ specifiers:
   esbuild-plugin-import-glob: npm:@alloc/esbuild-plugin-import-glob@^0.1.4
   esbuild-plugin-meta-url: npm:@chialab/esbuild-plugin-meta-url@^0.17.2
   execa: ^7.0.0
+  exit-hook: ^3.2.0
   glob: ^8.1.0
   html-minifier-terser: ^7.1.0
   kleur: ^4.1.5
@@ -33,8 +34,10 @@ specifiers:
   parse5: ^6.0.1
   prettier: ^2.8.4
   ts-debounce: ^4.0.0
+  type-fest: ^3.6.0
   typescript: ^4.9.4
   unconfig: ^0.3.7
+  uuid: npm:@lukeed/uuid@^2.0.0
   web-ext: ^7.5.0
   ws: ^8.12.1
 
@@ -51,6 +54,7 @@ dependencies:
   esbuild-plugin-import-glob: /@alloc/esbuild-plugin-import-glob/0.1.4
   esbuild-plugin-meta-url: /@chialab/esbuild-plugin-meta-url/0.17.2_4yu6gcteo5hmvzenkuzminzeqm
   execa: 7.0.0
+  exit-hook: 3.2.0
   glob: 8.1.0
   html-minifier-terser: 7.1.0
   kleur: 4.1.5
@@ -58,7 +62,9 @@ dependencies:
   md5-hex: 4.0.0
   parse5: 6.0.1
   ts-debounce: 4.0.0
+  type-fest: 3.6.0
   unconfig: 0.3.7
+  uuid: /@lukeed/uuid/2.0.0
   web-ext: 7.5.0
   ws: 8.12.1
 
@@ -637,6 +643,18 @@ packages:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.0
       '@jridgewell/sourcemap-codec': 1.4.14
+    dev: false
+
+  /@lukeed/csprng/1.0.1:
+    resolution: {integrity: sha512-uSvJdwQU5nK+Vdf6zxcWAY2A8r7uqe+gePwLWzJ+fsQehq18pc0I2hJKwypZ2aLM90+Er9u1xn4iLJPZ+xlL4g==}
+    engines: {node: '>=8'}
+    dev: false
+
+  /@lukeed/uuid/2.0.0:
+    resolution: {integrity: sha512-dUz8OmYvlY5A9wXaroHIMSPASpSYRLCqbPvxGSyHguhtTQIy24lC+EGxQlwv71AhRCO55WOtgwhzQLpw27JaJQ==}
+    engines: {node: '>=8'}
+    dependencies:
+      '@lukeed/csprng': 1.0.1
     dev: false
 
   /@mdn/browser-compat-data/5.2.29:
@@ -1866,6 +1884,11 @@ packages:
       onetime: 6.0.0
       signal-exit: 3.0.7
       strip-final-newline: 3.0.0
+    dev: false
+
+  /exit-hook/3.2.0:
+    resolution: {integrity: sha512-aIQN7Q04HGAV/I5BszisuHTZHXNoC23WtLkxdCLuYZMdWviRD0TMIt2bnUBi9MrHaF/hH8b3gwG9iaAUHKnJGA==}
+    engines: {node: ^12.20.0 || ^14.13.1 || >=16.0.0}
     dev: false
 
   /extend/3.0.2:
@@ -3880,6 +3903,11 @@ packages:
   /type-fest/2.19.0:
     resolution: {integrity: sha512-RAH822pAdBgcNMAfWnCBU3CFZcfZ/i1eZjwFU/dsLKumyuuP3niueg2UAukXYF0E2AAoc82ZSSf9J0WQBinzHA==}
     engines: {node: '>=12.20'}
+    dev: false
+
+  /type-fest/3.6.0:
+    resolution: {integrity: sha512-RqTRtKTzvPpNdDUp1dVkKQRunlPITk4mXeqFlAZoJsS+fLRn8AdPK0TcQDumGayhU7fjlBfiBjsq3pe3rIfXZQ==}
+    engines: {node: '>=14.16'}
     dev: false
 
   /typedarray-to-buffer/3.1.5:

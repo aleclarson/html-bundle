@@ -1,10 +1,12 @@
 {
-  "include": ["src"],
-  "references": [{ "path": "src" }, { "path": "src/client" }],
   "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "lib": ["dom", "esnext"],
     "module": "esnext",
     "target": "esnext",
-    "outDir": "dist",
+    "types": [],
+    "outDir": "../../dist/client",
     "sourceMap": true,
     "strict": true,
     "skipLibCheck": true,

@@ -1,21 +1,68 @@
-import type { FSWatcher as Watcher } from 'chokidar'
 import chromeRemote from 'chrome-remote-interface'
-import { readdir, readFile } from 'fs/promises'
+import exitHook from 'exit-hook'
+import fs from 'fs'
 import { cyan } from 'kleur/colors'
-import net from 'net'
 import path from 'path'
 import { cmd as webExtCmd } from 'web-ext'
-import { WebExtension } from '../config.mjs'
-import type { Flags } from './bundle.mjs'
-import { buildEvents, hmrClientEvents } from './events.mjs'
-import { bundleConfig, resolveHome, toArray } from './utils.mjs'
+import { Config, WebExtension } from '../../config.mjs'
+import type { Flags } from '../bundle.mjs'
+import { buildEvents, hmrClientEvents } from '../events.mjs'
+import { Plugin } from '../plugin.mjs'
+import { findFreeTcpPort, resolveHome, toArray } from '../utils.mjs'
 
-export async function enableWebExtension(flags: Flags, watcher?: Watcher) {
-  const ignoredFiles = new Set(await readdir(process.cwd()))
+export const webextPlugin: Plugin = (config, flags) => {
+  return {
+    async buildEnd(wasRebuild) {
+      if (!wasRebuild) {
+        await enableWebExtension(config, flags)
+      }
+    },
+  }
+}
+
+function parseContentSecurityPolicy(str: string) {
+  const policies = str.split(/ *; */)
+  const result: Record<string, Set<string>> = {}
+  for (const policy of policies) {
+    const [name, ...values] = policy.split(/ +/)
+    result[name] = new Set(values)
+  }
+  Object.defineProperty(result, 'toString', {
+    value: () => {
+      return Object.entries(result)
+        .map(([name, values]) => `${name} ${[...values].join(' ')}`)
+        .join('; ')
+    },
+  })
+  return result
+}
+
+async function enableWebExtension(config: Config, flags: Flags) {
+  const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'))
+  if (flags.watch) {
+    const originalManifest = structuredClone(manifest)
+
+    // Allow scripts to be loaded from the dev server.
+    const csp = parseContentSecurityPolicy(manifest.content_security_policy)
+    csp['script-src'].add('http://localhost:' + config.server.port)
+    manifest.content_security_policy = csp.toString()
+
+    fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2))
+    exitHook(() => {
+      fs.writeFileSync(
+        'manifest.json',
+        JSON.stringify(originalManifest, null, 2)
+      )
+    })
+  }
+
+  const ignoredFiles = new Set(fs.readdirSync(process.cwd()))
   const keepFile = (file: unknown) => {
     if (typeof file == 'string') {
       ignoredFiles.delete(file.split('/')[0])
-      watcher?.add(file)
+      if (fs.existsSync(file)) {
+        config.watcher?.add(file)
+      }
     }
   }
   const keepFiles = (arg: any) =>
@@ -25,11 +72,9 @@ export async function enableWebExtension(flags: Flags, watcher?: Watcher) {
       ? arg.forEach(keepFiles)
       : arg && Object.values(arg).forEach(keepFiles)
 
-  keepFile(bundleConfig.build)
+  keepFile(config.build)
   keepFile('manifest.json')
   keepFile('public')
-
-  const manifest = JSON.parse(await readFile('manifest.json', 'utf8'))
   keepFile(manifest.browser_action?.default_popup)
   keepFiles(manifest.background?.scripts)
   keepFiles(manifest.browser_action?.default_icon)
@@ -37,7 +82,7 @@ export async function enableWebExtension(flags: Flags, watcher?: Watcher) {
   keepFiles(manifest.content_scripts)
   keepFiles(manifest.icons)
 
-  const webextConfig = bundleConfig.webext || {}
+  const webextConfig = config.webext || {}
   const artifactsDir =
     webextConfig.artifactsDir || path.join(process.cwd(), 'web-ext-artifacts')
 
@@ -132,7 +177,7 @@ async function refreshOnRebuild(
 
     // For some reason, the Chrome process may stay alive if we don't
     // kill it explicitly.
-    process.on('beforeExit', () => {
+    exitHook(() => {
       instance.process.kill()
     })
   } else if (firefoxPort) {
@@ -146,7 +191,7 @@ async function refreshOnRebuild(
   if (tabs.length) {
     let resolvedTabs = tabs
     if (target == 'firefox-desktop') {
-      resolvedTabs = await resolveFirefoxTabs(tabs, manifest, runner)
+      resolvedTabs = resolveFirefoxTabs(tabs, manifest, runner)
     } else {
       resolvedTabs = tabs.map(url =>
         url == 'about:newtab' ? 'chrome://newtab/' : url
@@ -224,32 +269,30 @@ function resolveFirefoxTabs(
   manifest: any,
   runner: import('web-ext').MultiExtensionRunner
 ) {
-  return Promise.all(
-    tabs.map(async (url: string) => {
-      if (url != 'about:newtab') {
-        return url
-      }
-      const newTabPage = manifest.chrome_url_overrides?.newtab
-      if (newTabPage) {
-        const profilePath = runner.extensionRunners[0].profile?.path()
-        if (profilePath) {
-          const uuid = await extractFirefoxExtensionUUID(profilePath, manifest)
-          if (uuid) {
-            return `moz-extension://${uuid}/${newTabPage}`
-          }
+  return tabs.map((url: string) => {
+    if (url != 'about:newtab') {
+      return url
+    }
+    const newTabPage = manifest.chrome_url_overrides?.newtab
+    if (newTabPage) {
+      const profilePath = runner.extensionRunners[0].profile?.path()
+      if (profilePath) {
+        const uuid = extractFirefoxExtensionUUID(profilePath, manifest)
+        if (uuid) {
+          return `moz-extension://${uuid}/${newTabPage}`
         }
       }
-      return url
-    })
-  )
+    }
+    return url
+  })
 }
 
-async function extractFirefoxExtensionUUID(
+function extractFirefoxExtensionUUID(
   profile: string,
   manifest: Record<string, any>
 ) {
   try {
-    const rawPrefs = await readFile(path.join(profile, 'prefs.js'), 'utf8')
+    const rawPrefs = fs.readFileSync(path.join(profile, 'prefs.js'), 'utf8')
     const uuids = JSON.parse(
       (
         rawPrefs.match(
@@ -266,16 +309,6 @@ async function extractFirefoxExtensionUUID(
   }
 
   return null
-}
-
-function findFreeTcpPort() {
-  return new Promise<number>(resolve => {
-    const srv = net.createServer()
-    srv.listen(0, '127.0.0.1', () => {
-      const freeTcpPort: number = (srv.address() as any).port
-      srv.close(() => resolve(freeTcpPort))
-    })
-  })
 }
 
 async function openTabs(

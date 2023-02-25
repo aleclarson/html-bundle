@@ -1,70 +1,39 @@
 #!/usr/bin/env node
 
-import {
-  appendChild,
-  Attribute,
-  createScript,
-  findElement,
-  getAttribute,
-  Node,
-  ParentNode,
-} from '@web/parse5-utils'
-import browserslist from 'browserslist'
-import browserslistToEsbuild from 'browserslist-to-esbuild'
 import cac from 'cac'
-import * as chokidar from 'chokidar'
-import Critters from 'critters'
-import * as esbuild from 'esbuild'
-import importGlobPlugin from 'esbuild-plugin-import-glob'
-import metaUrlPlugin from 'esbuild-plugin-meta-url'
-import { existsSync } from 'fs'
-import { copyFile, readdir, readFile, rm, writeFile } from 'fs/promises'
+import { EventEmitter } from 'events'
+import { readdir, rm } from 'fs/promises'
 import glob from 'glob'
-import { minify } from 'html-minifier-terser'
-import { cyan, gray, red, yellow } from 'kleur/colors'
-import * as lightningCss from 'lightningcss'
-import md5Hex from 'md5-hex'
-import { parse, parseFragment, serialize } from 'parse5'
+import { cyan, red, yellow } from 'kleur/colors'
 import * as path from 'path'
 import { performance } from 'perf_hooks'
 import { debounce } from 'ts-debounce'
+import { parse as parseURL } from 'url'
+import * as uuid from 'uuid'
 import * as ws from 'ws'
-import { WebExtension } from '../config.mjs'
-import { buildEvents, hmrClientEvents } from './events.mjs'
-import {
-  baseRelative,
-  bundleConfig,
-  createDir,
-  findExternalScripts,
-  findStyleSheets,
-  getBuildPath,
-  relative,
-} from './utils.mjs'
-import { enableWebExtension } from './webext.mjs'
-
-const critters = new Critters({
-  path: bundleConfig.build,
-  logLevel: 'silent',
-})
-
-const hmrClients = new Set<ws.WebSocket>()
-const cssEntries = new Map<string, string>()
+import { Config, WebExtension } from '../config.mjs'
+import { compileClientModule } from './esbuild.mjs'
+import { buildEvents } from './events.mjs'
+import { buildHTML } from './html.mjs'
+import { HmrPlugin, Plugin, ServePlugin } from './plugin.mjs'
+import { findFreeTcpPort, loadBundleConfig } from './utils.mjs'
 
 const cli = cac('html-bundle')
 
 cli
   .command('')
   .option('--watch', `[boolean]`)
-  .option('--critical', `[boolean]`, { default: bundleConfig.isCritical })
+  .option('--critical', `[boolean]`)
   .option('--webext <target>', 'Override webext config')
-  .action(async options => {
-    glob(`${bundleConfig.src}/**/*.html`, (err, files) => {
+  .action(async flags => {
+    const config = await loadBundleConfig(flags)
+    glob(`${config.src}/**/*.html`, (err, files) => {
       if (err) {
         console.error(err)
         process.exit(1)
       }
-      process.env.NODE_ENV = options.watch ? 'development' : 'production'
-      build(files, options)
+      process.env.NODE_ENV = flags.watch ? 'development' : 'production'
+      build(files, config, flags)
     })
   })
 
@@ -76,35 +45,119 @@ export interface Flags {
   webext?: WebExtension.RunTarget | WebExtension.RunTarget[]
 }
 
-async function build(files: string[], flags: Flags) {
-  if (bundleConfig.deletePrev) {
-    await rm(bundleConfig.build, { force: true, recursive: true })
+async function build(files: string[], config: Config, flags: Flags) {
+  if (config.deletePrev) {
+    await rm(config.build, { force: true, recursive: true })
+  }
+
+  if (flags.watch) {
+    const servePlugins = config.plugins.filter(p => p.serve) as ServePlugin[]
+    if (servePlugins.length) {
+      const http = await import('http')
+      const server = http.createServer((req, response) => {
+        const request = Object.assign(req, parseURL(req.url!)) as Plugin.Request
+        const handled = servePlugins.some(p => p.serve(request, response))
+        if (!handled) {
+          response.statusCode = 404
+          response.end()
+        }
+      })
+      let port = config.server.port
+      if (port == 0) {
+        port = config.server.port = await findFreeTcpPort()
+      }
+      server.listen(port, () => {
+        console.log(cyan('http server listening on port %s'), port)
+      })
+    }
   }
 
   const timer = performance.now()
   files = files.map(file => path.resolve(file))
-  await Promise.all(files.map(file => buildHTML(file, flags)))
+  await Promise.all(files.map(file => buildHTML(file, config, flags)))
   console.log(
     cyan('build complete in %sms'),
     (performance.now() - timer).toFixed(2)
   )
 
-  if (flags.webext || bundleConfig.webext) {
-    await enableWebExtension(flags)
+  for (const plugin of config.plugins) {
+    if (!plugin.buildEnd) continue
+    await plugin.buildEnd?.(false)
   }
 
   if (flags.watch) {
-    const wss = new ws.WebSocketServer({ port: 5001 })
-    wss.on('connection', ws => {
-      hmrClients.add(ws)
-      ws.on('close', () => hmrClients.delete(ws))
-      ws.on('message', data => {
-        const { type, ...event } = JSON.parse(data.toString())
-        hmrClientEvents.emit(type, event)
-      })
-    })
+    const hmrPlugins = config.plugins.filter(p => p.hmr) as HmrPlugin[]
+    const hmrInstances: Plugin.HmrInstance[] = []
 
-    const watcher = chokidar.watch(bundleConfig.src, { ignoreInitial: true })
+    if (hmrPlugins.length) {
+      const events = new EventEmitter()
+      const clients = new Set<Plugin.Client>()
+      const context: Plugin.HmrContext = {
+        clients,
+        on: events.on.bind(events),
+      }
+      hmrPlugins.forEach(plugin => {
+        hmrInstances.push(plugin.hmr(context))
+      })
+      const wss = new ws.WebSocketServer({
+        port: config.server?.hmrPort ?? 5001,
+      })
+      const requests: Record<string, Function> = {}
+      wss.on('connection', socket => {
+        const pendingRequests = new Set<string>()
+        const evaluate = (body: string, env: Record<string, any> = {}) => {
+          const id = uuid.v4()
+          return new Promise<any>(resolve => {
+            requests[id] = resolve
+            pendingRequests.add(id)
+            socket.send(JSON.stringify({ id, body, env }))
+          })
+        }
+        const client: Plugin.Client = {
+          socket,
+          events: new EventEmitter(),
+          evaluate(expr) {
+            return evaluate('module.exports = ' + expr)
+          },
+          async evaluateFile(file, env) {
+            const code = await compileClientModule(file, config, 'cjs')
+            return evaluate(code, env)
+          },
+          getURL() {
+            return evaluate('location.href')
+          },
+          reload() {
+            return evaluate('location.reload()')
+          },
+        }
+        clients.add(client)
+        socket.on('close', () => {
+          for (const id of pendingRequests) {
+            requests[id](null)
+            delete requests[id]
+          }
+          clients.delete(client)
+        })
+        socket.on('message', data => {
+          const event = JSON.parse(data.toString())
+          if (event.type == 'result') {
+            pendingRequests.delete(event.id)
+            requests[event.id](event.result)
+            delete requests[event.id]
+          } else {
+            event.client = client
+            client.events.emit(event.type, event)
+            events.emit(event.type, event)
+          }
+        })
+        events.emit('connect', {
+          type: 'connect',
+          client,
+        })
+      })
+    }
+
+    const watcher = config.watcher!
     const changedFiles = new Set<string>()
 
     watcher.on('add', async file => {
@@ -118,11 +171,11 @@ async function build(files: string[], flags: Flags) {
     })
 
     watcher.on('unlink', async file => {
-      const outPath = getBuildPath(file).replace(/\.[jt]sx?$/, '.js')
+      const outPath = config.getBuildPath(file).replace(/\.[jt]sx?$/, '.js')
       try {
         await rm(outPath)
         let outDir = path.dirname(outPath)
-        while (outDir !== bundleConfig.build) {
+        while (outDir !== config.build) {
           const stats = await readdir(outDir)
           if (stats.length) break
           await rm(outDir)
@@ -133,313 +186,45 @@ async function build(files: string[], flags: Flags) {
     })
 
     const rebuild = debounce(async () => {
-      let isHtmlUpdate = false
-      let isHotUpdate = false
       console.clear()
-      changedFiles.forEach(file => {
+
+      let needRebuild = false
+
+      const acceptedFiles = new Map<Plugin.HmrInstance, string[]>()
+      accept: for (const file of changedFiles) {
         console.log(cyan('update'), file)
-        if (file.endsWith('.css')) {
-          isHotUpdate = true
-        } else {
-          isHtmlUpdate = true
+        for (const hmr of hmrInstances) {
+          if (hmr.accept(file)) {
+            let files = acceptedFiles.get(hmr)
+            if (!files) {
+              acceptedFiles.set(hmr, (files = []))
+            }
+            files.push(file)
+            continue accept
+          }
         }
-      })
+        needRebuild = true
+        break
+      }
       changedFiles.clear()
-      if (isHtmlUpdate) {
+
+      if (needRebuild) {
         buildEvents.emit('will-rebuild')
         const timer = performance.now()
-        await Promise.all(files.map(file => buildHTML(file, flags)))
-        const fullReload = JSON.stringify({ type: 'full-reload' })
-        hmrClients.forEach(client => client.send(fullReload))
+        await Promise.all(files.map(file => buildHTML(file, config, flags)))
         buildEvents.emit('rebuild')
         console.log(
           cyan('build complete in %sms'),
           (performance.now() - timer).toFixed(2)
         )
-      } else if (isHotUpdate && hmrClients.size) {
-        const hmrUpdates: string[] = []
+      } else {
         await Promise.all(
-          Array.from(cssEntries.keys(), async (file, i) => {
-            if (existsSync(file)) {
-              const { changed, outFile, code } = await buildCSSFile(file, flags)
-              if (changed) {
-                hmrUpdates[i] = JSON.stringify({
-                  type: 'css',
-                  file: baseRelative(outFile),
-                  code: code.toString('utf8'),
-                })
-              }
-            } else {
-              cssEntries.delete(file)
-            }
-          })
+          Array.from(acceptedFiles, ([hmr, files]) => hmr.update(files))
         )
-        if (hmrUpdates.length) {
-          hmrClients.forEach(client => {
-            hmrUpdates.forEach(update => client.send(update))
-          })
-        }
       }
       console.log(yellow('watching files...'))
     }, 200)
 
     console.log(yellow('watching files...'))
   }
-}
-
-function parseHTML(html: string) {
-  return (
-    html.includes('<!DOCTYPE html>') || html.includes('<html')
-      ? parse(html)
-      : parseFragment(html)
-  ) as ParentNode
-}
-
-async function buildHTML(file: string, flags: Flags) {
-  let html = await readFile(file, 'utf8')
-  if (!html) return
-
-  const outFile = getBuildPath(file)
-
-  const document = parseHTML(html)
-  await Promise.all([
-    buildLocalScripts(document, file, flags),
-    buildLocalStyles(document, file, flags),
-  ])
-
-  if (flags.watch) {
-    const hmrClientCode = await getHMRClient()
-    const hmrClientPath = path.resolve(bundleConfig.build, 'hmr.mjs')
-    await writeFile(hmrClientPath, hmrClientCode)
-    const hmrScript = createScript({
-      type: 'module',
-      src: relative(outFile, hmrClientPath),
-    })
-    const head = findElement(document, e => e.tagName === 'head')!
-    appendChild(head, hmrScript)
-  }
-
-  html = serialize(document)
-
-  if (!flags.watch) {
-    try {
-      html = await minify(html, {
-        collapseWhitespace: true,
-        removeComments: true,
-        ...bundleConfig.htmlMinifierTerser,
-      })
-    } catch (e) {
-      console.error(e)
-    }
-
-    if (flags.critical) {
-      try {
-        const isPartical = !html.startsWith('<!DOCTYPE html>')
-        html = await critters.process(html)
-        // fix critters jsdom
-        if (isPartical) {
-          html = html.replace(/<\/?(html|head|body)>/g, '')
-        }
-      } catch (err) {
-        console.error(err)
-      }
-    }
-  }
-
-  await createDir(outFile)
-  await writeFile(outFile, html)
-
-  if (bundleConfig.copy) {
-    let copied = 0
-    for (const path of bundleConfig.copy) {
-      if (glob.hasMagic(path)) {
-        glob(path, (err, files) => {
-          if (err) {
-            console.error(err)
-          } else {
-            files.forEach(async file => {
-              const outPath = getBuildPath(path)
-              await createDir(outPath)
-              await copyFile(file, outPath)
-              copied++
-            })
-          }
-        })
-      } else {
-        const outPath = getBuildPath(path)
-        await createDir(outPath)
-        await copyFile(path, outPath)
-        copied++
-      }
-    }
-    console.log(cyan('copied %s %s'), copied, copied == 1 ? 'file' : 'files')
-  }
-
-  return html
-}
-
-async function buildLocalScripts(document: Node, file: string, flags: Flags) {
-  const entryScriptsByOutPath: Record<string, any> = {}
-  const entryScripts: {
-    srcPath: string
-    outPath: string
-    isModule: boolean
-  }[] = []
-
-  for (const scriptNode of findExternalScripts(document)) {
-    const srcAttr = scriptNode.attrs.find(a => a.name === 'src')
-    if (srcAttr?.value.startsWith('./')) {
-      const srcPath = path.join(path.dirname(file), srcAttr.value)
-      console.log(yellow('⌁'), baseRelative(srcPath))
-      const outPath = getBuildPath(srcPath).replace(/\.[tj]sx?$/, '.js')
-      srcAttr.value = baseRelative(outPath)
-      entryScripts.push(
-        (entryScriptsByOutPath[outPath] = {
-          srcPath,
-          outPath,
-          isModule: getAttribute(scriptNode, 'type') === 'module',
-        })
-      )
-    }
-  }
-
-  const targets = browserslistToEsbuild(bundleConfig.targets)
-  const esbuildOpts = bundleConfig.esbuild
-
-  try {
-    await esbuild.build({
-      format: 'esm',
-      charset: 'utf8',
-      splitting: true,
-      sourcemap: flags.watch,
-      minify: !flags.watch,
-      ...esbuildOpts,
-      bundle: true,
-      entryPoints: entryScripts.map(script => script.srcPath),
-      outdir: bundleConfig.build,
-      outbase: bundleConfig.src,
-      target: targets,
-      plugins: [
-        metaUrlPlugin(),
-        importGlobPlugin(),
-        ...(esbuildOpts.plugins || []),
-      ],
-      define: {
-        'process.env.NODE_ENV': `"${process.env.NODE_ENV}"`,
-        ...esbuildOpts.define,
-      },
-    })
-  } catch (e) {
-    console.error(e)
-  }
-}
-
-function getCSSTargets() {
-  return lightningCss.browserslistToTargets(browserslist(bundleConfig.targets))
-}
-
-async function buildCSSFile(
-  srcPath: string,
-  flags: Flags,
-  cssTargets = getCSSTargets()
-) {
-  console.log(yellow('⌁'), baseRelative(srcPath))
-  const result = await lightningCss.bundleAsync({
-    targets: cssTargets,
-    minify: !flags.watch,
-    sourceMap: flags.watch,
-    errorRecovery: true,
-    resolver: {
-      resolve(specifier, originatingFile) {
-        if (/^\.\.?(\/|$)/.test(specifier)) {
-          return path.resolve(path.dirname(originatingFile), specifier)
-        }
-        // Assume bare imports are found in root node_modules.
-        return path.resolve('node_modules', specifier)
-      },
-    },
-    ...bundleConfig.lightningCss,
-    filename: srcPath,
-    drafts: {
-      nesting: true,
-      ...bundleConfig.lightningCss?.drafts,
-    },
-  })
-
-  if (result.warnings.length) {
-    console.warn('')
-    result.warnings.forEach(w => {
-      console.warn(red(w.type), w.message)
-      console.warn(
-        ' ',
-        gray(
-          baseRelative(w.loc.filename).slice(1) +
-            ':' +
-            w.loc.line +
-            ':' +
-            w.loc.column
-        )
-      )
-    })
-    console.warn('')
-  }
-
-  const prevHash = cssEntries.get(srcPath)
-  const hash = md5Hex(result.code)
-  cssEntries.set(srcPath, hash)
-
-  const outFile = getBuildPath(srcPath)
-  await createDir(outFile)
-  await writeFile(outFile, result.code)
-  if (result.map) {
-    await writeFile(outFile + '.map', result.map)
-  }
-
-  return { ...result, changed: hash != prevHash, outFile }
-}
-
-async function buildLocalStyles(document: Node, file: string, flags: Flags) {
-  const entryStyles: { srcAttr: Attribute; srcPath: string }[] = []
-  for (const styleNode of findStyleSheets(document)) {
-    const srcAttr = styleNode.attrs.find(a => a.name === 'href')
-    if (srcAttr?.value.startsWith('./')) {
-      entryStyles.push({
-        srcAttr,
-        srcPath: path.join(path.dirname(file), srcAttr.value),
-      })
-    }
-  }
-  const cssTargets = getCSSTargets()
-  await Promise.all(
-    entryStyles.map(style =>
-      buildCSSFile(style.srcPath, flags, cssTargets)
-        .then(async result => {
-          style.srcAttr.value = baseRelative(result.outFile)
-        })
-        .catch(e => {
-          console.error(
-            'Failed to compile "%s":',
-            baseRelative(style.srcPath),
-            e
-          )
-        })
-    )
-  )
-}
-
-let hmrClientPromise: Promise<string>
-
-function getHMRClient() {
-  return (hmrClientPromise ||= (async () => {
-    const hmrScriptPath = new URL('./hmr.js', import.meta.url).pathname
-    return esbuild
-      .build({
-        entryPoints: [hmrScriptPath],
-        // minify: true,
-        write: false,
-      })
-      .then(result => {
-        return result.outputFiles[0].text
-      })
-  })())
 }

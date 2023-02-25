@@ -1,5 +1,33 @@
 import * as esbuild from 'esbuild'
+import { EventEmitter } from 'events'
 import * as htmlMinifierTerser from 'html-minifier-terser'
+import * as lightningCss from 'lightningcss'
+import { Merge } from 'type-fest'
+import { Plugin, PluginInstance } from './src/plugin.mjs'
+
+export function defineConfig(config: UserConfig): typeof config
+
+export type UserConfig = {
+  src?: string
+  copy?: string[]
+  build?: string
+  /** Browser targets in Browserslist syntax */
+  targets?: string
+  server?: ServerConfig
+  /** @see https://extensionworkshop.com/documentation/develop/web-ext-command-reference/#web-ext-run */
+  webext?: boolean | WebExtension.Config
+  esbuild?: esbuild.BuildOptions
+  lightningCss?: lightningCss.BundleAsyncOptions
+  htmlMinifierTerser?: htmlMinifierTerser.Options
+  isCritical?: boolean
+  deletePrev?: boolean
+  plugins?: Plugin[]
+}
+
+export type ServerConfig = {
+  port: number
+  hmrPort: number
+}
 
 export namespace WebExtension {
   type Config = {
@@ -36,18 +64,13 @@ export namespace WebExtension {
   }
 }
 
-export type Config = {
-  src: string
-  copy?: string[]
-  build: string
-  targets: string
-  /** @see https://extensionworkshop.com/documentation/develop/web-ext-command-reference/#web-ext-run */
-  webext?: boolean | WebExtension.Config
-  esbuild: esbuild.BuildOptions
-  lightningCss: any
-  htmlMinifierTerser: htmlMinifierTerser.Options
-  isCritical: boolean
-  deletePrev: boolean
-}
-
-export function defineConfig(config: Partial<Config>): typeof config
+export type Config = Merge<
+  Required<UserConfig>,
+  {
+    plugins: PluginInstance[]
+    events: EventEmitter
+    watcher?: import('chokidar').FSWatcher
+    getBuildPath(file: string): string
+    webext?: WebExtension.Config
+  }
+>

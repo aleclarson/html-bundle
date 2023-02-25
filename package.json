@@ -5,7 +5,8 @@
     "html-bundle": "./dist/bundle.mjs"
   },
   "scripts": {
-    "start": "tsc",
+    "dev": "tsc --build -w",
+    "build": "tsc --build",
     "update": "npx npm-check-updates -u && npx typesync && npm i && npm outdated"
   },
   "keywords": [
@@ -45,6 +46,7 @@
     "esbuild-plugin-import-glob": "npm:@alloc/esbuild-plugin-import-glob@^0.1.4",
     "esbuild-plugin-meta-url": "npm:@chialab/esbuild-plugin-meta-url@^0.17.2",
     "execa": "^7.0.0",
+    "exit-hook": "^3.2.0",
     "glob": "^8.1.0",
     "html-minifier-terser": "^7.1.0",
     "kleur": "^4.1.5",
@@ -52,7 +54,9 @@
     "md5-hex": "^4.0.0",
     "parse5": "^6.0.1",
     "ts-debounce": "^4.0.0",
+    "type-fest": "^3.6.0",
     "unconfig": "^0.3.7",
+    "uuid": "npm:@lukeed/uuid@^2.0.0",
     "web-ext": "^7.5.0",
     "ws": "^8.12.1"
   },
