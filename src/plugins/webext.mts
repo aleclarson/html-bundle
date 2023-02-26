@@ -43,6 +43,14 @@ export const webextPlugin: Plugin = (config, flags) => {
     },
     hmr(clients) {
       enableWebExtension(webextConfig, config, flags, clients)
+      clients.on('connect', ({ client }) => {
+        client
+          .evaluate('[location.protocol, location.host]')
+          .then(([protocol, host]) => {
+            console.log({ protocol, host })
+            client.emit('webext:uuid', { protocol, host })
+          })
+      })
     },
   }
 }
