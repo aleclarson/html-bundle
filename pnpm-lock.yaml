@@ -6,6 +6,7 @@ patchedDependencies:
     path: patches/@chialab__esbuild-plugin-meta-url@0.17.2.patch
 
 specifiers:
+  '@alloc/fast-rimraf': ^1.0.8
   '@alloc/prettier-config': ^1.0.0
   '@types/chrome-remote-interface': ^0.31.9
   '@types/firefox-webext-browser': ^109.0.0
@@ -75,6 +76,7 @@ dependencies:
   ws: 8.12.1
 
 devDependencies:
+  '@alloc/fast-rimraf': 1.0.8
   '@alloc/prettier-config': 1.0.0
   '@types/chrome-remote-interface': 0.31.9
   '@types/glob': 8.0.1
@@ -96,6 +98,11 @@ packages:
     transitivePeerDependencies:
       - supports-color
     dev: false
+
+  /@alloc/fast-rimraf/1.0.8:
+    resolution: {integrity: sha512-TsRTRLLDW6Q4fWBAYlbkcaHQDAANKsI0smrhS/1x7/GHcjVxo+r+2VRbqrWaYpmjdhvCp5v7n2wtwkMYp+Kivw==}
+    hasBin: true
+    dev: true
 
   /@alloc/prettier-config/1.0.0:
     resolution: {integrity: sha512-xm50V1qxSdTh1O1fKA+gqcU605YSnxfq6HwtYSFU3fRsKMFnUSuSOxqSAPI7y2sRxqPed2EIuGmNn107LVQM6g==}

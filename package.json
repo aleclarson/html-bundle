@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "tsc --build -w",
     "build": "tsc --build",
+    "prepublishOnly": "rimraf dist && tsc --build",
     "update": "npx npm-check-updates -u && npx typesync && npm i && npm outdated"
   },
   "keywords": [
@@ -27,6 +28,7 @@
   "license": "MIT",
   "prettier": "@alloc/prettier-config",
   "devDependencies": {
+    "@alloc/fast-rimraf": "^1.0.8",
     "@alloc/prettier-config": "^1.0.0",
     "@types/chrome-remote-interface": "^0.31.9",
     "@types/glob": "^8.0.0",
