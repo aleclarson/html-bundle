@@ -54,9 +54,7 @@ async function build(files: string[], config: Config, flags: Flags) {
   let server: import('http').Server | undefined
   if (flags.watch) {
     const servePlugins = config.plugins.filter(p => p.serve) as ServePlugin[]
-    if (servePlugins.length) {
-      server = await installHttpServer(config, servePlugins)
-    }
+    server = await installHttpServer(config, servePlugins)
   }
 
   // Set the HMR_PORT variable once the server port is known.
@@ -77,7 +75,7 @@ async function build(files: string[], config: Config, flags: Flags) {
     await plugin.buildEnd(false)
   }
 
-  if (flags.watch) {
+  if (server) {
     const hmrInstances: Plugin.HmrInstance[] = []
 
     const hmrPlugins = config.plugins.filter(p => p.hmr) as HmrPlugin[]
@@ -190,21 +188,27 @@ async function installHttpServer(config: Config, servePlugins: ServePlugin[]) {
       }
       if (file) {
         file = await file
-        if (file) {
-          const headers = (file.headers && lowercaseKeys(file.headers)) || {}
-          headers['access-control-allow-origin'] ||= '*'
-          headers['content-type'] ||=
-            mime.lookup(file.path || request.pathname) ||
-            'application/octet-stream'
-
-          console.log({ path: file.path, headers })
-          response.statusCode = 200
-          for (const [name, value] of Object.entries(headers)) {
-            response.setHeader(name, value)
+      }
+      if (!file && request.pathname.startsWith('/' + config.build)) {
+        try {
+          file = {
+            data: fs.readFileSync('.' + request.pathname),
           }
-          response.end(file.data)
-          return
+        } catch {}
+      }
+      if (file) {
+        const headers = (file.headers && lowercaseKeys(file.headers)) || {}
+        headers['access-control-allow-origin'] ||= '*'
+        headers['content-type'] ||=
+          mime.lookup(file.path || request.pathname) ||
+          'application/octet-stream'
+
+        response.statusCode = 200
+        for (const [name, value] of Object.entries(headers)) {
+          response.setHeader(name, value)
         }
+        response.end(file.data)
+        return
       }
     }
 
@@ -216,20 +220,22 @@ async function installHttpServer(config: Config, servePlugins: ServePlugin[]) {
     }
   })
 
-  await resolveServerUrl(config)
-  server.listen(config.server.port, () => {
-    console.log(
-      cyan('%s server listening on port %s'),
-      config.server.https ? 'https' : 'http',
-      config.server.port
-    )
+  const protocol = config.server.https ? 'https' : 'http'
+  const port =
+    config.server.port == 0
+      ? (config.server.port = await findFreeTcpPort())
+      : config.server.port
+
+  config.server.url = `${protocol}://localhost:${port}`
+  server.listen(port, () => {
+    console.log(cyan('%s server listening on port %s'), protocol, port)
   })
 
   return server
 }
 
 async function installWebSocketServer(
-  server: import('http').Server | undefined,
+  server: import('http').Server,
   config: Config,
   hmrPlugins: HmrPlugin[],
   hmrInstances: Plugin.HmrInstance[]
@@ -309,13 +315,7 @@ async function installWebSocketServer(
     }
   }
 
-  let port: number | undefined
-  if (server == null) {
-    await resolveServerUrl(config)
-    port = config.server.port
-  }
-
-  const wss = new ws.WebSocketServer({ server, port })
+  const wss = new ws.WebSocketServer({ server })
   wss.on('connection', socket => {
     const client = new Client(socket)
     clients.add(client)
@@ -364,13 +364,4 @@ async function getCertificate(cacheDir: string) {
     } catch {}
     return content
   }
-}
-
-async function resolveServerUrl(config: Config) {
-  if (config.server.port == 0) {
-    config.server.port = await findFreeTcpPort()
-  }
-  config.server.url = `http${config.server.https ? 's' : ''}://localhost:${
-    config.server.port
-  }`
 }
