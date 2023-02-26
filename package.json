@@ -1,6 +1,6 @@
 {
   "name": "@alloc/html-bundle",
-  "version": "7.2.0",
+  "version": "7.2.1",
   "description": "Bundle your HTML assets with Esbuild and LightningCSS. Custom plugins, HMR platform, and more.",
   "bin": {
     "html-bundle": "./dist/bundle.mjs"
