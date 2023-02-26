@@ -1,20 +1,24 @@
 {
   "name": "@alloc/html-bundle",
   "version": "7.1.0",
+  "description": "Bundle your HTML assets with Esbuild and LightningCSS. Custom plugins, HMR platform, and more.",
   "bin": {
     "html-bundle": "./dist/bundle.mjs"
   },
   "scripts": {
     "dev": "tsc --build -w",
-    "build": "tsc --build --clean",
+    "build": "tsc --build",
     "update": "npx npm-check-updates -u && npx typesync && npm i && npm outdated"
   },
   "keywords": [
+    "html",
     "bundler",
-    "SFC",
-    "HTML",
-    "TypeScript",
-    "esbuild"
+    "typescript",
+    "esbuild",
+    "web-ext",
+    "extendible",
+    "lightningcss",
+    "vite"
   ],
   "author": "Alec Larson",
   "contributors": [
