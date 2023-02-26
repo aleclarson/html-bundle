@@ -1,7 +1,9 @@
-import { existsSync } from 'fs'
+import fs from 'fs'
 import md5Hex from 'md5-hex'
+import svgToDataUri from 'mini-svg-data-uri'
+import { Config } from '../../config.mjs'
 import { buildCSSFile } from '../css.mjs'
-import { Plugin } from '../plugin.mjs'
+import { CssPlugin, Plugin } from '../plugin.mjs'
 import { baseRelative } from '../utils.mjs'
 
 export const cssReloadPlugin: Plugin = config => {
@@ -14,12 +16,14 @@ export const cssReloadPlugin: Plugin = config => {
   }
 
   return {
+    cssPlugins: [inlineSvgUrls(config)],
     document(_root, _file, { styles }) {
       const buildPrefix = '/' + config.build + '/'
       styles.forEach(style => {
         const srcAttr = style.srcAttr.value
         if (srcAttr.startsWith(buildPrefix)) {
-          style.srcAttr.value = new URL(srcAttr, config.server.url).href
+          const devUrl = config.resolveDevUrl(srcAttr)
+          style.srcAttr.value = devUrl.href
 
           // TODO: get file hash
           cssEntries.set(style.srcPath, '')
@@ -33,7 +37,7 @@ export const cssReloadPlugin: Plugin = config => {
           const updates: [uri: string][] = []
           await Promise.all(
             Array.from(cssEntries.keys(), async (file, i) => {
-              if (existsSync(file)) {
+              if (fs.existsSync(file)) {
                 const { outFile, code } = await buildCSSFile(file, config, {
                   watch: true,
                 })
@@ -58,5 +62,25 @@ export const cssReloadPlugin: Plugin = config => {
         },
       }
     },
+  }
+}
+
+function inlineSvgUrls(config: Config): CssPlugin {
+  return {
+    visitor: importer => ({
+      Url(node) {
+        if (!/^[./]/.test(node.url)) {
+          return // Ignore external URLs.
+        }
+        if (node.url.endsWith('.svg')) {
+          const svgFile = config.resolve(node.url, importer)
+          const svgText = fs.readFileSync(svgFile, 'utf8')
+          return {
+            url: svgToDataUri(svgText),
+            loc: node.loc,
+          }
+        }
+      },
+    }),
   }
 }

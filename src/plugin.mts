@@ -1,6 +1,7 @@
 import { ParentNode } from '@web/parse5-utils'
 import { EventEmitter } from 'events'
 import http from 'http'
+import lightningCss from 'lightningcss'
 import { Promisable } from 'type-fest'
 import { UrlWithStringQuery } from 'url'
 import { Config, WebExtension } from '../config.mjs'
@@ -13,6 +14,7 @@ export interface Plugin {
 }
 
 export interface PluginInstance {
+  cssPlugins?: CssPlugin[]
   buildEnd?(wasRebuild: boolean): Promisable<void>
   hmr?(clients: Plugin.ClientSet): Plugin.HmrInstance | void
   /**
@@ -84,4 +86,8 @@ export interface ServePlugin {
 
 export interface HmrPlugin {
   hmr: Exclude<PluginInstance['hmr'], undefined>
+}
+
+export interface CssPlugin {
+  visitor: (importer: URL) => lightningCss.Visitor<any> | null
 }

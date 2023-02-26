@@ -11,11 +11,28 @@ export async function buildCSSFile(
   config: Config,
   flags: { watch?: boolean } = { watch: true }
 ) {
+  const importer = new URL('file://' + path.resolve(file))
+  const visitors = config.plugins
+    .map(({ cssPlugins }) => {
+      const visitors: lightningCss.Visitor<any>[] = []
+      cssPlugins?.forEach(cssPlugin => {
+        const visitor = cssPlugin.visitor(importer)
+        if (visitor) {
+          visitors.push(visitor)
+        }
+      })
+      return visitors
+    })
+    .flat()
+
   console.log(yellow('⌁'), baseRelative(file))
   const bundle = await lightningCss.bundleAsync({
     minify: !flags.watch,
     sourceMap: flags.watch,
     errorRecovery: true,
+    visitor: visitors.length
+      ? lightningCss.composeVisitors(visitors)
+      : undefined,
     resolver: {
       resolve(specifier, originatingFile) {
         if (/^\.\.?(\/|$)/.test(specifier)) {

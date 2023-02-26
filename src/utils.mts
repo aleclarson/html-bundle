@@ -58,8 +58,8 @@ export async function loadBundleConfig(flags: Flags) {
       ...userConfig.esbuild,
       target: userConfig.esbuild?.target ?? browserslistToEsbuild(browsers),
       define: {
-        'import.meta.env.DEV': env(flags.watch),
-        'process.env.NODE_ENV': env(process.env.NODE_ENV),
+        'import.meta.env.DEV': env(flags.watch || false),
+        'process.env.NODE_ENV': env(process.env.NODE_ENV || 'development'),
         ...userConfig.esbuild?.define,
       },
     } as any,
@@ -74,7 +74,7 @@ export async function loadBundleConfig(flags: Flags) {
       },
     },
     server: {
-      url: '',
+      url: null!,
       port: 0,
       ...userConfig.server,
       https:
@@ -97,6 +97,22 @@ export async function loadBundleConfig(flags: Flags) {
         file = path.join(process.cwd(), file)
       }
       return file.replace(/\.([cm]?)(?:jsx|tsx?)$/, '.$1js')
+    },
+    resolveDevUrl(id, importer) {
+      let url = config.resolve(id, importer)
+      if (url.protocol == 'file:') {
+        url = new URL(baseRelative(url.pathname), config.server.url)
+      }
+      return url
+    },
+    resolve(id, importer = config.server.url) {
+      if (typeof importer == 'string') {
+        importer = new URL(importer, 'file:')
+      }
+      if (id[0] == '/' && importer.protocol == 'file:') {
+        return new URL('file://' + process.cwd() + id)
+      }
+      return new URL(id, importer)
     },
   }
   await Promise.all(

@@ -242,7 +242,7 @@ async function installHttpServer(config: Config, servePlugins: ServePlugin[]) {
       ? (config.server.port = await findFreeTcpPort())
       : config.server.port
 
-  config.server.url = `${protocol}://localhost:${port}`
+  config.server.url = new URL(`${protocol}://localhost:${port}`)
   server.listen(port, () => {
     console.log(cyan('%s server listening on port %s'), protocol, port)
   })

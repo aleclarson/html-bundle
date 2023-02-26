@@ -78,7 +78,7 @@ async function enableWebExtension(
   const manifest = JSON.parse(rawManifest)
 
   if (flags.watch) {
-    const httpServerUrl = config.server.url
+    const httpServerUrl = config.server.url.href
     const wsServerUrl = httpServerUrl.replace('http', 'ws')
 
     // The content security policy needs to be lax for HMR to work.

@@ -95,11 +95,13 @@ export type Config = Merge<
     events: EventEmitter
     virtualFiles: Record<string, Plugin.VirtualFile>
     getBuildPath(file: string): string
+    resolve(id: string, importer?: string | URL): URL
+    resolveDevUrl(id: string, importer?: string | URL): URL
     esbuild: esbuild.BuildOptions & {
       define: Record<string, string>
     }
     server: {
-      url: string
+      url: URL
       port: number
       https?: { cert?: string; key?: string }
     }
