@@ -181,43 +181,49 @@ async function installHttpServer(config: Config, servePlugins: ServePlugin[]) {
     const request = Object.assign(req, parseURL(req.url!)) as Plugin.Request
     request.searchParams = new URLSearchParams(request.search || '')
 
-    let file = config.virtualFiles[request.pathname]
-    if (file != null) {
-      if (typeof file == 'function') {
-        file = file(request)
-      }
-      if (file) {
-        file = await file
-      }
-      if (!file && request.pathname.startsWith('/' + config.build)) {
-        try {
-          file = {
-            data: fs.readFileSync('.' + request.pathname),
-          }
-        } catch {}
-      }
-      if (file) {
-        const headers = (file.headers && lowercaseKeys(file.headers)) || {}
-        headers['access-control-allow-origin'] ||= '*'
-        headers['content-type'] ||=
-          mime.lookup(file.path || request.pathname) ||
-          'application/octet-stream'
+    let file: Plugin.VirtualFileData | null = null
+    for (const plugin of servePlugins) {
+      file = (await plugin.serve(request, response)) || null
+      if (file || response.headersSent) return
+    }
 
-        response.statusCode = 200
-        for (const [name, value] of Object.entries(headers)) {
-          response.setHeader(name, value)
+    // If no plugin handled the request, check the virtual file system.
+    if (!file) {
+      let virtualFile = config.virtualFiles[request.pathname]
+      if (virtualFile) {
+        if (typeof virtualFile == 'function') {
+          virtualFile = virtualFile(request)
         }
-        response.end(file.data)
-        return
+        file = await virtualFile
       }
     }
 
-    const handled = servePlugins.some(p => p.serve(request, response))
-    if (!handled) {
-      console.log(red('404: %s'), req.url)
-      response.statusCode = 404
-      response.end()
+    // If no virtual file exists, check the build directory.
+    if (!file && request.pathname.startsWith('/' + config.build)) {
+      try {
+        file = {
+          data: fs.readFileSync('.' + request.pathname),
+        }
+      } catch {}
     }
+
+    if (file) {
+      const headers = (file.headers && lowercaseKeys(file.headers)) || {}
+      headers['access-control-allow-origin'] ||= '*'
+      headers['content-type'] ||=
+        mime.lookup(file.path || request.pathname) || 'application/octet-stream'
+
+      response.statusCode = 200
+      for (const [name, value] of Object.entries(headers)) {
+        response.setHeader(name, value)
+      }
+      response.end(file.data)
+      return
+    }
+
+    console.log(red('404: %s'), req.url)
+    response.statusCode = 404
+    response.end()
   })
 
   const protocol = config.server.https ? 'https' : 'http'

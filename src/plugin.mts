@@ -19,10 +19,10 @@ export interface PluginInstance {
    * Must return `true` if changes are made to the `manifest` object.
    */
   webext?(manifest: any, webextConfig: WebExtension.Config): Promisable<boolean>
-  /**
-   * Return true to indicate that the request was handled.
-   */
-  serve?(request: Plugin.Request, response: http.ServerResponse): boolean | void
+  serve?(
+    request: Plugin.Request,
+    response: http.ServerResponse
+  ): Promisable<Plugin.VirtualFileData | void>
   document?(
     root: ParentNode,
     file: string,

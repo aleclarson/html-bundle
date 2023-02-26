@@ -47,30 +47,12 @@ export const liveScriptsPlugin: Plugin = config => {
         },
       }
     },
-    serve(req, res) {
-      const uri = req.pathname
-      if (uri && /\.m?js(\.map)?$/.test(uri)) {
-        let buffer = cache[uri]
-        if (!buffer && uri.startsWith('/' + config.build)) {
-          try {
-            // When code splitting is performed on each entry script,
-            // the resulting "chunks" aren't stored in our cache until
-            // the first HMR update.
-            buffer = cache[uri] = fs.readFileSync('.' + uri)
-          } catch {}
+    serve(req) {
+      if (req.pathname) {
+        const data = cache[req.pathname]
+        if (data) {
+          return { data }
         }
-        if (!buffer) {
-          return
-        }
-        res.setHeader(
-          'Content-Type',
-          uri.endsWith('.js') ? 'application/javascript' : 'application/json'
-        )
-        res.setHeader('Cache-Control', 'no-store')
-        res.setHeader('Access-Control-Allow-Origin', '*')
-        res.write(buffer)
-        res.end()
-        return true
       }
     },
   }

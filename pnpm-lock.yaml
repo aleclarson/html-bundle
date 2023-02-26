@@ -9,6 +9,7 @@ specifiers:
   '@alloc/fast-rimraf': ^1.0.8
   '@alloc/prettier-config': ^1.0.0
   '@types/chrome-remote-interface': ^0.31.9
+  '@types/etag': ^1.8.1
   '@types/firefox-webext-browser': ^109.0.0
   '@types/glob': ^8.0.0
   '@types/html-minifier-terser': ^7.0.0
@@ -77,6 +78,7 @@ devDependencies:
   '@alloc/fast-rimraf': 1.0.8
   '@alloc/prettier-config': 1.0.0
   '@types/chrome-remote-interface': 0.31.9
+  '@types/etag': 1.8.1
   '@types/glob': 8.0.1
   '@types/html-minifier-terser': 7.0.0
   '@types/parse5': 6.0.3
@@ -731,6 +733,12 @@ packages:
     resolution: {integrity: sha512-U4z4aCmQ/lhtKC1g2N+qbchikPnLbd6u8P3F4G3/ougX5rMQnW4a17u+kyBmKwtRzX9Wu3i14ZeIfbk0xTyUUQ==}
     dependencies:
       devtools-protocol: 0.0.927104
+    dev: true
+
+  /@types/etag/1.8.1:
+    resolution: {integrity: sha512-bsKkeSqN7HYyYntFRAmzcwx/dKW4Wa+KVMTInANlI72PWLQmOpZu96j0OqHZGArW4VQwCmJPteQlXaUDeOB0WQ==}
+    dependencies:
+      '@types/node': 18.14.0
     dev: true
 
   /@types/firefox-webext-browser/109.0.0:
