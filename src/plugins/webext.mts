@@ -47,7 +47,6 @@ export const webextPlugin: Plugin = (config, flags) => {
         client
           .evaluate('[location.protocol, location.host]')
           .then(([protocol, host]) => {
-            console.log({ protocol, host })
             client.emit('webext:uuid', { protocol, host })
           })
       })
@@ -320,7 +319,6 @@ async function refreshOnRebuild(
         pages.length > 0 &&
         pages.every(tab => tab.url.startsWith(extOrigin))
       ) {
-        console.log('Preserving the first tab!')
         const firstPage = await chromeRemote({
           port,
           target: pages[0].id,
