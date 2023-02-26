@@ -109,24 +109,42 @@ export async function buildHTML(
 
   if (config.copy) {
     let copied = 0
-    for (const path of config.copy) {
-      if (glob.hasMagic(path)) {
-        glob(path, (err, files) => {
+    for (let pattern of config.copy) {
+      if (typeof pattern != 'string') {
+        Object.entries(pattern).forEach(async ([srcPath, outPath]) => {
+          if (path.isAbsolute(outPath)) {
+            return console.error(
+              `Failed to copy "${srcPath}" to "${outPath}": Output path must be relative`
+            )
+          }
+          if (outPath.startsWith('..')) {
+            return console.error(
+              `Failed to copy "${srcPath}" to "${outPath}": Output path must not be outside build directory`
+            )
+          }
+          outPath = path.resolve(config.build, outPath)
+          await createDir(outPath)
+          await copyFile(srcPath, outPath)
+          copied++
+        })
+      } else if (glob.hasMagic(pattern)) {
+        glob(pattern, (err, matchedPaths) => {
           if (err) {
             console.error(err)
           } else {
-            files.forEach(async file => {
-              const outPath = config.getBuildPath(path)
+            matchedPaths.forEach(async srcPath => {
+              const outPath = config.getBuildPath(srcPath)
               await createDir(outPath)
-              await copyFile(file, outPath)
+              await copyFile(srcPath, outPath)
               copied++
             })
           }
         })
       } else {
-        const outPath = config.getBuildPath(path)
+        const srcPath = pattern
+        const outPath = config.getBuildPath(srcPath)
         await createDir(outPath)
-        await copyFile(path, outPath)
+        await copyFile(pattern, outPath)
         copied++
       }
     }

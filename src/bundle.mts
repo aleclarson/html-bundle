@@ -50,19 +50,28 @@ async function build(files: string[], config: Config, flags: Flags) {
     fs.rmSync(config.build, { force: true, recursive: true })
   }
 
-  let server: import('https').Server | undefined
+  let server: import('http').Server | undefined
   if (flags.watch) {
     const servePlugins = config.plugins.filter(p => p.serve) as ServePlugin[]
     if (servePlugins.length) {
-      config.server.https ??= await getCertificate(
-        'node_modules/.html-bundle/self-signed'
-      ).then(certificate => ({
-        cert: certificate,
-        key: certificate,
-      }))
+      let createServer: typeof import('http').createServer
+      let serverOptions: import('https').ServerOptions | undefined
+      if (config.server.https) {
+        createServer = (await import('https')).createServer
+        serverOptions = config.server.https
+        if (!serverOptions.cert) {
+          const cert = await getCertificate(
+            'node_modules/.html-bundle/self-signed'
+          )
+          serverOptions.cert = cert
+          serverOptions.key = cert
+        }
+      } else {
+        createServer = (await import('http')).createServer
+        serverOptions = {}
+      }
 
-      const https = await import('https')
-      server = https.createServer(config.server.https, (req, response) => {
+      server = createServer(serverOptions, (req, response) => {
         const request = Object.assign(req, parseURL(req.url!)) as Plugin.Request
         const handled = servePlugins.some(p => p.serve(request, response))
         if (!handled) {

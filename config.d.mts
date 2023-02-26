@@ -9,10 +9,13 @@ export function defineConfig(config: UserConfig): typeof config
 
 export type UserConfig = {
   src?: string
-  copy?: string[]
+  copy?: (string | Record<string, string>)[]
   build?: string
-  /** Browser targets in Browserslist syntax */
-  targets?: string
+  /**
+   * Compile JS/CSS syntax to be compatible with the browsers that match
+   * the given Browserslist query.
+   */
+  browsers?: string
   server?: ServerConfig
   /** @see https://extensionworkshop.com/documentation/develop/web-ext-command-reference/#web-ext-run */
   webext?: boolean | WebExtension.Config
@@ -26,12 +29,17 @@ export type UserConfig = {
 
 export type ServerConfig = {
   port?: number
-  https?: { cert: string; key: string }
+  https?: boolean | { cert: string; key: string }
 }
 
 export namespace WebExtension {
   type Config = {
     artifactsDir?: string
+    /**
+     * Copy the `webextension-polyfill` file into your build directory,
+     * then inject it into your extension.
+     */
+    polyfill?: boolean
     run?: RunOptions
   }
 
@@ -72,6 +80,10 @@ export type Config = Merge<
     getBuildPath(file: string): string
     esbuild: esbuild.BuildOptions & {
       define: Record<string, string>
+    }
+    server: {
+      port: number
+      https?: { cert?: string; key?: string }
     }
     watcher?: import('chokidar').FSWatcher
     webext?: WebExtension.Config

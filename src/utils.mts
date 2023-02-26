@@ -30,13 +30,13 @@ export async function loadBundleConfig(flags: Flags) {
     defaultPlugins.push(await unwrapDefault(import('./plugins/webext.mjs')))
   }
   const plugins = defaultPlugins.concat(userConfig.plugins || [])
-  const targets = userConfig.targets ?? '>=0.25%, not dead'
+  const browsers = userConfig.browsers ?? '>=0.25%, not dead'
   const srcDir = userConfig.src ?? 'src'
   const config: Config = {
+    browsers,
     build: 'build',
     deletePrev: true,
     isCritical: false,
-    targets,
     ...userConfig,
     src: srcDir,
     plugins: [],
@@ -49,7 +49,7 @@ export async function loadBundleConfig(flags: Flags) {
     htmlMinifierTerser: userConfig.htmlMinifierTerser ?? {},
     esbuild: {
       ...userConfig.esbuild,
-      target: userConfig.esbuild?.target ?? browserslistToEsbuild(targets),
+      target: userConfig.esbuild?.target ?? browserslistToEsbuild(browsers),
       define: {
         'import.meta.env.DEV': env(flags.watch),
         'process.env.NODE_ENV': env(process.env.NODE_ENV),
@@ -60,7 +60,7 @@ export async function loadBundleConfig(flags: Flags) {
       ...userConfig.lightningCss,
       targets:
         userConfig.lightningCss?.targets ??
-        lightningCss.browserslistToTargets(browserslist(targets)),
+        lightningCss.browserslistToTargets(browserslist(browsers)),
       drafts: {
         nesting: true,
         ...userConfig.lightningCss?.drafts,
@@ -69,6 +69,10 @@ export async function loadBundleConfig(flags: Flags) {
     server: {
       port: 0,
       ...userConfig.server,
+      https:
+        userConfig.server?.https != true
+          ? userConfig.server?.https || undefined
+          : {},
     },
     getBuildPath(file) {
       const wasAbsolute = path.isAbsolute(file)

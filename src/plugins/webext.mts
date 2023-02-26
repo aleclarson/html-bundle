@@ -1,3 +1,4 @@
+import { createScript, findElement, insertBefore } from '@web/parse5-utils'
 import chromeRemote from 'chrome-remote-interface'
 import exitHook from 'exit-hook'
 import fs from 'fs'
@@ -10,11 +11,35 @@ import { buildEvents, hmrClientEvents } from '../events.mjs'
 import { Plugin } from '../plugin.mjs'
 import { findFreeTcpPort, resolveHome, toArray } from '../utils.mjs'
 
+const polyfillPath = path.resolve(
+  import.meta.url.replace(/^file:/, ''),
+  '../../../node_modules/webextension-polyfill/dist/browser-polyfill.min.js'
+)
+
 export const webextPlugin: Plugin = (config, flags) => {
+  const webextConfig = config.webext!
+
+  if (webextConfig.polyfill) {
+    config.copy.push({
+      [polyfillPath]: 'browser-polyfill.min.js',
+      [polyfillPath + '.map']: 'browser-polyfill.min.js.map',
+    })
+  }
+
   return {
     async buildEnd(wasRebuild) {
       if (!wasRebuild) {
-        await enableWebExtension(config, flags)
+        await enableWebExtension(webextConfig, config, flags)
+      }
+    },
+    document(root) {
+      // FIXME: need to inject into background scripts too
+      if (webextConfig.polyfill) {
+        const head = findElement(root, e => e.tagName == 'head')!
+        const polyfillScript = createScript({
+          src: path.join('/', config.build, 'browser-polyfill.min.js'),
+        })
+        insertBefore(head, polyfillScript, head.childNodes[0])
       }
     },
   }
@@ -40,9 +65,15 @@ function parseContentSecurityPolicy(str: string) {
   return result
 }
 
-async function enableWebExtension(config: Config, flags: Flags) {
+async function enableWebExtension(
+  webextConfig: WebExtension.Config,
+  config: Config,
+  flags: Flags
+) {
+  let isManifestChanged = false
   const rawManifest = fs.readFileSync('manifest.json', 'utf8')
   const manifest = JSON.parse(rawManifest)
+
   if (flags.watch) {
     // Allow connections to the dev server.
     const devServerHost = 'localhost:' + config.server.port
@@ -51,6 +82,8 @@ async function enableWebExtension(config: Config, flags: Flags) {
 
     const csp = parseContentSecurityPolicy(manifest.content_security_policy)
     csp['default-src'] ||= new Set(["'self'"])
+    csp['connect-src'] ||= new Set()
+    csp['default-src'].add(devServerHost)
     for (const key in csp) {
       csp[key].add('https://' + devServerHost)
       if (key == 'default-src' || key == 'connect-src') {
@@ -58,10 +91,32 @@ async function enableWebExtension(config: Config, flags: Flags) {
       }
     }
 
-    // Save our changes…
     manifest.content_security_policy = csp.toString()
-    fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2))
+    isManifestChanged = true
+  }
 
+  if (webextConfig.polyfill) {
+    const polyfillPath = path.join(config.build, 'browser-polyfill.min.js')
+    const injectPolyfillIfNeeded = (scripts: string[] | undefined) => {
+      if (!scripts) return
+      const needsBrowserPolyfill = scripts.some(file => {
+        const code = fs.readFileSync(file, 'utf8')
+        return /\bbrowser\./.test(code)
+      })
+      if (needsBrowserPolyfill) {
+        scripts.unshift(polyfillPath)
+        isManifestChanged = true
+      }
+    }
+    injectPolyfillIfNeeded(manifest.background?.scripts)
+    manifest.content_scripts?.forEach((script: { js?: string[] }) => {
+      injectPolyfillIfNeeded(script.js)
+    })
+  }
+
+  if (isManifestChanged) {
+    // Save our changes…
+    fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2))
     // …but revert them once we exit.
     exitHook(() => {
       fs.writeFileSync('manifest.json', rawManifest)
@@ -94,7 +149,6 @@ async function enableWebExtension(config: Config, flags: Flags) {
   keepFiles(manifest.content_scripts)
   keepFiles(manifest.icons)
 
-  const webextConfig = config.webext || {}
   const artifactsDir =
     webextConfig.artifactsDir || path.join(process.cwd(), 'web-ext-artifacts')
 
@@ -142,6 +196,9 @@ async function enableWebExtension(config: Config, flags: Flags) {
       }
 
       params.keepProfileChanges ??= runConfig.keepProfileChanges ?? false
+      if (params.chromiumProfile || params.firefoxProfile) {
+        params.profileCreateIfMissing = true
+      }
 
       const runner = await webExtCmd.run({
         ...params,
@@ -149,7 +206,6 @@ async function enableWebExtension(config: Config, flags: Flags) {
         sourceDir: process.cwd(),
         artifactsDir,
         noReload: true,
-        profileCreateIfMissing: true,
       })
 
       await refreshOnRebuild(target, runner, manifest, tabs, port).catch(e => {
