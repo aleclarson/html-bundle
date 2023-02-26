@@ -22,7 +22,6 @@ specifiers:
   chrome-launcher: ^0.15.1
   chrome-remote-interface: ^0.32.1
   critters: ^0.0.16
-  devtools-protocol: ^0.0.1109433
   esbuild: ^0.17.3
   esbuild-plugin-import-glob: npm:@alloc/esbuild-plugin-import-glob@^0.1.4
   esbuild-plugin-meta-url: npm:@chialab/esbuild-plugin-meta-url@^0.17.2
@@ -54,7 +53,6 @@ dependencies:
   chokidar: 3.5.3
   chrome-remote-interface: 0.32.1
   critters: 0.0.16
-  devtools-protocol: 0.0.1109433
   esbuild: 0.17.10
   esbuild-plugin-import-glob: /@alloc/esbuild-plugin-import-glob/0.1.4
   esbuild-plugin-meta-url: /@chialab/esbuild-plugin-meta-url/0.17.2_4yu6gcteo5hmvzenkuzminzeqm
@@ -1542,10 +1540,6 @@ packages:
     resolution: {integrity: sha512-pGjwhsmsp4kL2RTz08wcOlGN83otlqHeD/Z5T8GXZB+/YcpQ/dgo+lbU8ZsGxV0HIvqqxo9l7mqYwyYMD9bKDg==}
     engines: {node: '>=0.10'}
     hasBin: true
-    dev: false
-
-  /devtools-protocol/0.0.1109433:
-    resolution: {integrity: sha512-w1Eqih66egbSr2eOoGZ+NsdF7HdxmKDo3pKFBySEGsmVvwWWNXzNCDcKrbFnd23Jf7kH1M806OfelXwu+Jk11g==}
     dev: false
 
   /devtools-protocol/0.0.927104:
