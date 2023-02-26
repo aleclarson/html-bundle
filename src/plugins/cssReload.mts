@@ -14,11 +14,17 @@ export const cssReloadPlugin: Plugin = config => {
   }
 
   return {
-    hmr({ clients }) {
+    document(_root, _file, { styles }) {
+      styles.forEach(style => {
+        // TODO: get file hash
+        cssEntries.set(style.srcPath, '')
+      })
+    },
+    hmr(clients) {
       return {
         accept: file => file.endsWith('.css'),
         async update() {
-          const updates: { file: string; cssText: string }[] = []
+          const updates: [file: string, cssText: string][] = []
           await Promise.all(
             Array.from(cssEntries.keys(), async (file, i) => {
               if (existsSync(file)) {
@@ -27,10 +33,7 @@ export const cssReloadPlugin: Plugin = config => {
                 })
                 const cssText = code.toString('utf8')
                 if (updateCssEntry(file, cssText)) {
-                  updates[i] = {
-                    file: baseRelative(outFile),
-                    cssText,
-                  }
+                  updates[i] = [baseRelative(outFile), cssText]
                 }
               } else {
                 cssEntries.delete(file)
@@ -40,7 +43,7 @@ export const cssReloadPlugin: Plugin = config => {
           for (const update of updates) {
             await Promise.all(
               Array.from(clients, client =>
-                client.evaluateFile('./client/cssReload.js', update)
+                client.evaluateModule('./client/cssReload.js', update)
               )
             )
           }

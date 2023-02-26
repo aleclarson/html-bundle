@@ -20,17 +20,17 @@ export const liveScriptsPlugin: Plugin = config => {
         cache[id] = fs.readFileSync(outFile)
         fs.writeFileSync(
           outFile,
-          `await import("https://localhost:${config.server.port}${id}")`
+          `await import("https://localhost:${config.server.port}${id}?t=" + Date.now())`
         )
       }
     },
-    hmr({ clients }) {
+    hmr(clients) {
       return {
         // FIXME: We should only accept files that we know are used in
         // bundled entry scripts with the type="module" attribute, as
         // those are the only scripts we can update without reloading
         // the extension.
-        accept: file => /\.[tj]sx?$/.test(file),
+        accept: file => /\.m?[tj]sx?$/.test(file),
         async update() {
           for (const scripts of Object.values(documents)) {
             const { outputFiles } = await buildRelativeScripts(
@@ -49,7 +49,7 @@ export const liveScriptsPlugin: Plugin = config => {
     },
     serve(req, res) {
       const uri = req.pathname
-      if (uri && /\.js(\.map)?$/.test(uri)) {
+      if (uri && /\.m?js(\.map)?$/.test(uri)) {
         let buffer = cache[uri]
         if (!buffer && uri.startsWith('/' + config.build)) {
           try {

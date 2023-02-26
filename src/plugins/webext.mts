@@ -2,12 +2,11 @@ import { createScript, findElement, insertBefore } from '@web/parse5-utils'
 import chromeRemote from 'chrome-remote-interface'
 import exitHook from 'exit-hook'
 import fs from 'fs'
-import { cyan } from 'kleur/colors'
+import { cyan, yellow } from 'kleur/colors'
 import path from 'path'
 import { cmd as webExtCmd } from 'web-ext'
 import { Config, WebExtension } from '../../config.mjs'
 import type { Flags } from '../bundle.mjs'
-import { buildEvents, hmrClientEvents } from '../events.mjs'
 import { Plugin } from '../plugin.mjs'
 import { findFreeTcpPort, resolveHome, toArray } from '../utils.mjs'
 
@@ -27,13 +26,13 @@ export const webextPlugin: Plugin = (config, flags) => {
   }
 
   return {
-    async buildEnd(wasRebuild) {
-      if (!wasRebuild) {
+    async buildEnd() {
+      if (!flags.watch) {
+        // Pack the web extension for distribution.
         await enableWebExtension(webextConfig, config, flags)
       }
     },
     document(root) {
-      // FIXME: need to inject into background scripts too
       if (webextConfig.polyfill) {
         const head = findElement(root, e => e.tagName == 'head')!
         const polyfillScript = createScript({
@@ -41,6 +40,9 @@ export const webextPlugin: Plugin = (config, flags) => {
         })
         insertBefore(head, polyfillScript, head.childNodes[0])
       }
+    },
+    hmr(clients) {
+      enableWebExtension(webextConfig, config, flags, clients)
     },
   }
 }
@@ -68,28 +70,31 @@ function parseContentSecurityPolicy(str: string) {
 async function enableWebExtension(
   webextConfig: WebExtension.Config,
   config: Config,
-  flags: Flags
+  flags: Flags,
+  clients?: Plugin.ClientSet
 ) {
   let isManifestChanged = false
   const rawManifest = fs.readFileSync('manifest.json', 'utf8')
   const manifest = JSON.parse(rawManifest)
 
   if (flags.watch) {
-    // Allow connections to the dev server.
-    const devServerHost = 'localhost:' + config.server.port
-    manifest.permissions.push('https://' + devServerHost + '/*')
-    manifest.permissions.push('wss://' + devServerHost + '/*')
+    const httpServerUrl = config.server.url
+    const wsServerUrl = httpServerUrl.replace('http', 'ws')
 
-    const csp = parseContentSecurityPolicy(manifest.content_security_policy)
+    // The content security policy needs to be lax for HMR to work.
+    const csp = parseContentSecurityPolicy(
+      manifest.content_security_policy || ''
+    )
     csp['default-src'] ||= new Set(["'self'"])
-    csp['connect-src'] ||= new Set()
-    csp['default-src'].add(devServerHost)
-    for (const key in csp) {
-      csp[key].add('https://' + devServerHost)
-      if (key == 'default-src' || key == 'connect-src') {
-        csp[key].add('wss://' + devServerHost)
-      }
-    }
+    csp['default-src'].add(httpServerUrl)
+    csp['connect-src'] ||= new Set(csp['default-src'])
+    csp['connect-src'].add(httpServerUrl)
+    csp['connect-src'].add(wsServerUrl)
+    csp['script-src'] ||= new Set(csp['default-src'] || ["'self'"])
+    csp['script-src'].add(httpServerUrl)
+    csp['style-src'] ||= new Set(csp['default-src'] || ["'self'"])
+    csp['style-src'].add(httpServerUrl)
+    csp['style-src'].add("'unsafe-inline'")
 
     manifest.content_security_policy = csp.toString()
     isManifestChanged = true
@@ -114,6 +119,12 @@ async function enableWebExtension(
     })
   }
 
+  for (const plugin of config.plugins) {
+    if (!plugin.webext) continue
+    isManifestChanged =
+      (await plugin.webext(manifest, webextConfig)) || isManifestChanged
+  }
+
   if (isManifestChanged) {
     // Save our changes…
     fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2))
@@ -124,10 +135,13 @@ async function enableWebExtension(
   }
 
   const ignoredFiles = new Set(fs.readdirSync(process.cwd()))
-  const keepFile = (file: unknown) => {
+  const keepFile = (
+    file: string | undefined,
+    watch = !!file && !file.startsWith(config.build + '/')
+  ) => {
     if (typeof file == 'string') {
       ignoredFiles.delete(file.split('/')[0])
-      if (fs.existsSync(file)) {
+      if (watch && fs.existsSync(file)) {
         config.watcher?.add(file)
       }
     }
@@ -139,7 +153,7 @@ async function enableWebExtension(
       ? arg.forEach(keepFiles)
       : arg && Object.values(arg).forEach(keepFiles)
 
-  keepFile(config.build)
+  keepFile(config.build, false)
   keepFile('manifest.json')
   keepFile('public')
   keepFile(manifest.browser_action?.default_popup)
@@ -208,7 +222,15 @@ async function enableWebExtension(
         noReload: true,
       })
 
-      await refreshOnRebuild(target, runner, manifest, tabs, port).catch(e => {
+      await refreshOnRebuild(
+        target,
+        runner,
+        config,
+        clients!,
+        manifest,
+        tabs,
+        port
+      ).catch(e => {
         console.error(
           '[%s] Error during setup:',
           target,
@@ -231,6 +253,8 @@ async function enableWebExtension(
 async function refreshOnRebuild(
   target: WebExtension.RunTarget,
   runner: import('web-ext').MultiExtensionRunner,
+  config: Config,
+  clients: Plugin.ClientSet,
   manifest: any,
   tabs: string[],
   firefoxPort?: number
@@ -269,7 +293,7 @@ async function refreshOnRebuild(
   }
 
   let uuid: string
-  hmrClientEvents.on('webext:uuid', event => {
+  clients.on('webext:uuid', event => {
     if (event.protocol == extProtocol) {
       uuid = event.id
     }
@@ -279,7 +303,7 @@ async function refreshOnRebuild(
     // Ensure not all tabs will be closed as a result of the extension
     // being reloaded, since that will cause an unsightly reopening of
     // the browser window.
-    buildEvents.on('will-rebuild', async () => {
+    config.events.on('will-rebuild', async () => {
       const extOrigin = extProtocol + '//' + uuid
       const pages = (await chromeRemote.List({ port })).filter(
         tab => tab.type == 'page'
@@ -300,8 +324,13 @@ async function refreshOnRebuild(
     })
   }
 
-  buildEvents.on('rebuild', async () => {
+  config.events.on('rebuild', async () => {
     const extOrigin = extProtocol + '//' + uuid
+
+    if (!uuid) {
+      console.warn('[%s] ' + yellow('⚠'), target, 'Extension UUID not found')
+      return
+    }
 
     console.log(cyan('↺'), extOrigin)
 
@@ -326,7 +355,11 @@ async function refreshOnRebuild(
       })
 
     if (missingTabs.length) {
-      await openTabs(port, missingTabs, manifest, isChromium, true)
+      try {
+        await openTabs(port, missingTabs, manifest, isChromium, true)
+      } catch (e: any) {
+        console.error(e.message)
+      }
     }
   })
 }

@@ -41,6 +41,7 @@ export async function loadBundleConfig(flags: Flags) {
     src: srcDir,
     plugins: [],
     events: new EventEmitter(),
+    virtualFiles: {},
     watcher: flags.watch
       ? chokidar.watch(srcDir, { ignoreInitial: true })
       : undefined,
@@ -67,6 +68,7 @@ export async function loadBundleConfig(flags: Flags) {
       },
     },
     server: {
+      url: '',
       port: 0,
       ...userConfig.server,
       https:
@@ -147,4 +149,12 @@ export function findFreeTcpPort() {
       srv.close(() => resolve(freeTcpPort))
     })
   })
+}
+
+export function lowercaseKeys<T extends object>(obj: T): T {
+  const result: any = {}
+  for (const [key, value] of Object.entries(obj)) {
+    result[key.toLowerCase()] = value
+  }
+  return result
 }

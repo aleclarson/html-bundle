@@ -5,6 +5,8 @@ import { EventEmitter } from 'events'
 import * as fs from 'fs'
 import glob from 'glob'
 import { cyan, red, yellow } from 'kleur/colors'
+import md5Hex from 'md5-hex'
+import * as mime from 'mrmime'
 import * as path from 'path'
 import { performance } from 'perf_hooks'
 import { debounce } from 'ts-debounce'
@@ -13,10 +15,9 @@ import * as uuid from 'uuid'
 import * as ws from 'ws'
 import { Config, WebExtension } from '../config.mjs'
 import { compileClientModule } from './esbuild.mjs'
-import { buildEvents } from './events.mjs'
 import { buildHTML } from './html.mjs'
 import { HmrPlugin, Plugin, ServePlugin } from './plugin.mjs'
-import { findFreeTcpPort, loadBundleConfig } from './utils.mjs'
+import { findFreeTcpPort, loadBundleConfig, lowercaseKeys } from './utils.mjs'
 
 const cli = cac('html-bundle')
 
@@ -54,41 +55,7 @@ async function build(files: string[], config: Config, flags: Flags) {
   if (flags.watch) {
     const servePlugins = config.plugins.filter(p => p.serve) as ServePlugin[]
     if (servePlugins.length) {
-      let createServer: typeof import('http').createServer
-      let serverOptions: import('https').ServerOptions | undefined
-      if (config.server.https) {
-        createServer = (await import('https')).createServer
-        serverOptions = config.server.https
-        if (!serverOptions.cert) {
-          const cert = await getCertificate(
-            'node_modules/.html-bundle/self-signed'
-          )
-          serverOptions.cert = cert
-          serverOptions.key = cert
-        }
-      } else {
-        createServer = (await import('http')).createServer
-        serverOptions = {}
-      }
-
-      server = createServer(serverOptions, (req, response) => {
-        const request = Object.assign(req, parseURL(req.url!)) as Plugin.Request
-        const handled = servePlugins.some(p => p.serve(request, response))
-        if (!handled) {
-          console.log(red('404: %s'), req.url)
-          response.statusCode = 404
-          response.end()
-        }
-      })
-
-      let port = config.server.port
-      if (port == 0) {
-        port = config.server.port = await findFreeTcpPort()
-      }
-
-      server.listen(port, () => {
-        console.log(cyan('https server listening on port %s'), port)
-      })
+      server = await installHttpServer(config, servePlugins)
     }
   }
 
@@ -107,80 +74,15 @@ async function build(files: string[], config: Config, flags: Flags) {
 
   for (const plugin of config.plugins) {
     if (!plugin.buildEnd) continue
-    await plugin.buildEnd?.(false)
+    await plugin.buildEnd(false)
   }
 
   if (flags.watch) {
-    const hmrPlugins = config.plugins.filter(p => p.hmr) as HmrPlugin[]
     const hmrInstances: Plugin.HmrInstance[] = []
 
+    const hmrPlugins = config.plugins.filter(p => p.hmr) as HmrPlugin[]
     if (hmrPlugins.length) {
-      const events = new EventEmitter()
-      const clients = new Set<Plugin.Client>()
-      const requests: Record<string, Function> = {}
-
-      const context: Plugin.HmrContext = {
-        clients,
-        on: events.on.bind(events),
-      }
-
-      hmrPlugins.forEach(plugin => {
-        hmrInstances.push(plugin.hmr(context))
-      })
-
-      const wss = new ws.WebSocketServer({ server })
-      wss.on('connection', socket => {
-        const pendingRequests = new Set<string>()
-        const evaluate = (body: string, env: Record<string, any> = {}) => {
-          const id = uuid.v4()
-          return new Promise<any>(resolve => {
-            requests[id] = resolve
-            pendingRequests.add(id)
-            socket.send(JSON.stringify({ id, body, env }))
-          })
-        }
-        const client: Plugin.Client = {
-          socket,
-          events: new EventEmitter(),
-          evaluate(expr) {
-            return evaluate('module.exports = ' + expr)
-          },
-          async evaluateFile(file, env) {
-            const code = await compileClientModule(file, config, 'cjs')
-            return evaluate(code, env)
-          },
-          getURL() {
-            return evaluate('location.href')
-          },
-          reload() {
-            return evaluate('location.reload()')
-          },
-        }
-        clients.add(client)
-        socket.on('close', () => {
-          for (const id of pendingRequests) {
-            requests[id](null)
-            delete requests[id]
-          }
-          clients.delete(client)
-        })
-        socket.on('message', data => {
-          const event = JSON.parse(data.toString())
-          if (event.type == 'result') {
-            pendingRequests.delete(event.id)
-            requests[event.id](event.result)
-            delete requests[event.id]
-          } else {
-            event.client = client
-            client.events.emit(event.type, event)
-            events.emit(event.type, event)
-          }
-        })
-        events.emit('connect', {
-          type: 'connect',
-          client,
-        })
-      })
+      await installWebSocketServer(server, config, hmrPlugins, hmrInstances)
     }
 
     const watcher = config.watcher!
@@ -235,10 +137,16 @@ async function build(files: string[], config: Config, flags: Flags) {
       changedFiles.clear()
 
       if (needRebuild) {
-        buildEvents.emit('will-rebuild')
+        config.events.emit('will-rebuild')
         const timer = performance.now()
         await Promise.all(files.map(file => buildHTML(file, config, flags)))
-        buildEvents.emit('rebuild')
+        config.events.emit('rebuild')
+
+        for (const plugin of config.plugins) {
+          if (!plugin.buildEnd) continue
+          await plugin.buildEnd(true)
+        }
+
         console.log(
           cyan('build complete in %sms'),
           (performance.now() - timer).toFixed(2)
@@ -253,6 +161,188 @@ async function build(files: string[], config: Config, flags: Flags) {
 
     console.log(yellow('watching files...'))
   }
+}
+
+async function installHttpServer(config: Config, servePlugins: ServePlugin[]) {
+  let createServer: typeof import('http').createServer
+  let serverOptions: import('https').ServerOptions | undefined
+  if (config.server.https) {
+    createServer = (await import('https')).createServer
+    serverOptions = config.server.https
+    if (!serverOptions.cert) {
+      const cert = await getCertificate('node_modules/.html-bundle/self-signed')
+      serverOptions.cert = cert
+      serverOptions.key = cert
+    }
+  } else {
+    createServer = (await import('http')).createServer
+    serverOptions = {}
+  }
+
+  const server = createServer(serverOptions, async (req, response) => {
+    const request = Object.assign(req, parseURL(req.url!)) as Plugin.Request
+    request.searchParams = new URLSearchParams(request.search || '')
+
+    let file = config.virtualFiles[request.pathname]
+    if (file != null) {
+      if (typeof file == 'function') {
+        file = file(request)
+      }
+      if (file) {
+        file = await file
+        if (file) {
+          const headers = (file.headers && lowercaseKeys(file.headers)) || {}
+          headers['access-control-allow-origin'] ||= '*'
+          headers['content-type'] ||=
+            mime.lookup(file.path || request.pathname) ||
+            'application/octet-stream'
+
+          console.log({ path: file.path, headers })
+          response.statusCode = 200
+          for (const [name, value] of Object.entries(headers)) {
+            response.setHeader(name, value)
+          }
+          response.end(file.data)
+          return
+        }
+      }
+    }
+
+    const handled = servePlugins.some(p => p.serve(request, response))
+    if (!handled) {
+      console.log(red('404: %s'), req.url)
+      response.statusCode = 404
+      response.end()
+    }
+  })
+
+  await resolveServerUrl(config)
+  server.listen(config.server.port, () => {
+    console.log(
+      cyan('%s server listening on port %s'),
+      config.server.https ? 'https' : 'http',
+      config.server.port
+    )
+  })
+
+  return server
+}
+
+async function installWebSocketServer(
+  server: import('http').Server | undefined,
+  config: Config,
+  hmrPlugins: HmrPlugin[],
+  hmrInstances: Plugin.HmrInstance[]
+) {
+  const events = new EventEmitter()
+  const clients = new Set<Plugin.Client>()
+  const requests: Record<string, Function> = {}
+
+  const context: Plugin.ClientSet = clients as any
+  context.on = events.on.bind(events)
+
+  hmrPlugins.forEach(plugin => {
+    const instance = plugin.hmr(context)
+    if (instance) {
+      hmrInstances.push(instance)
+    }
+  })
+
+  const evaluate = (client: Client, src: string, args: any[] = []) => {
+    return new Promise<any>(resolve => {
+      const id = uuid.v4()
+      requests[id] = resolve
+      client.pendingRequests.add(id)
+      client.socket.send(
+        JSON.stringify({
+          id,
+          src: new URL(src, config.server.url).href,
+          args,
+        })
+      )
+    })
+  }
+
+  const compiledModules = new Map<string, Plugin.VirtualFileData>()
+
+  class Client extends EventEmitter {
+    readonly pendingRequests = new Set<string>()
+    constructor(readonly socket: ws.WebSocket) {
+      super()
+    }
+    evaluate(expr: string) {
+      const path = `/${md5Hex(expr)}.js`
+      config.virtualFiles[path] ||= {
+        data: `export default () => ${expr}`,
+      }
+      return evaluate(this, path)
+    }
+    async evaluateModule(file: string, args?: any[]) {
+      const moduleUrl = new URL(file, import.meta.url)
+      const mtime = fs.statSync(moduleUrl).mtimeMs
+
+      let compiled = compiledModules.get(moduleUrl.href)
+      if (compiled?.mtime != mtime) {
+        const data = await compileClientModule(file, config, 'esm')
+        compiledModules.set(
+          moduleUrl.href,
+          (compiled = {
+            path: moduleUrl.pathname,
+            mtime,
+            data,
+          })
+        )
+      }
+
+      const path = `/${md5Hex(moduleUrl.href)}.${mtime}.js`
+      config.virtualFiles[path] = compiled
+
+      const result = await evaluate(this, path, args)
+      delete config.virtualFiles[path]
+      return result
+    }
+    getURL() {
+      return this.evaluate('location.href')
+    }
+    reload() {
+      return this.evaluate('location.reload()')
+    }
+  }
+
+  let port: number | undefined
+  if (server == null) {
+    await resolveServerUrl(config)
+    port = config.server.port
+  }
+
+  const wss = new ws.WebSocketServer({ server, port })
+  wss.on('connection', socket => {
+    const client = new Client(socket)
+    clients.add(client)
+    socket.on('close', () => {
+      for (const id of client.pendingRequests) {
+        requests[id](null)
+        delete requests[id]
+      }
+      clients.delete(client)
+    })
+    socket.on('message', data => {
+      const event = JSON.parse(data.toString())
+      if (event.type == 'result') {
+        client.pendingRequests.delete(event.id)
+        requests[event.id](event.result)
+        delete requests[event.id]
+      } else {
+        event.client = client
+        client.emit(event.type, event)
+        events.emit(event.type, event)
+      }
+    })
+    events.emit('connect', {
+      type: 'connect',
+      client,
+    })
+  })
 }
 
 async function getCertificate(cacheDir: string) {
@@ -274,4 +364,13 @@ async function getCertificate(cacheDir: string) {
     } catch {}
     return content
   }
+}
+
+async function resolveServerUrl(config: Config) {
+  if (config.server.port == 0) {
+    config.server.port = await findFreeTcpPort()
+  }
+  config.server.url = `http${config.server.https ? 's' : ''}://localhost:${
+    config.server.port
+  }`
 }
