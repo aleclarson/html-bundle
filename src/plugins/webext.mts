@@ -153,9 +153,9 @@ async function enableWebExtension(
       ? arg.forEach(keepFiles)
       : arg && Object.values(arg).forEach(keepFiles)
 
-  keepFile(config.build, false)
   keepFile('manifest.json')
-  keepFile('public')
+  keepFile(config.build, false)
+  keepFile(config.assets)
   keepFile(manifest.browser_action?.default_popup)
   keepFiles(manifest.background?.scripts)
   keepFiles(manifest.browser_action?.default_icon)

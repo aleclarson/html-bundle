@@ -1,14 +1,12 @@
-export default (file: string, cssText: string) => {
-  const prevStyle = document.querySelector(
-    `link[href="${file}"], style[data-href="${file}"]`
-  )
-  if (prevStyle) {
-    const url = new URL(file, location.origin)
-    console.log('[HMR] css changed:', url.href)
-    const style = document.createElement('style')
-    style.setAttribute('data-href', file)
-    style.innerHTML = cssText
-    prevStyle.after(style)
-    prevStyle.remove()
+export default async (file: string) => {
+  const url = new URL(file, import.meta.env.DEV_URL)
+  const prevLink = document.querySelector(`link[href^="${url.href}"]`)
+  if (prevLink) {
+    console.log('[HMR] css updated:', url.href)
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = url.href + '?t=' + Date.now()
+    link.onload = () => prevLink.remove()
+    prevLink.after(link)
   }
 }

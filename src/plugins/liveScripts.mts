@@ -1,4 +1,3 @@
-import fs from 'fs'
 import { buildRelativeScripts, RelativeScript } from '../esbuild.mjs'
 import { Plugin } from '../plugin.mjs'
 import { baseRelative } from '../utils.mjs'
@@ -10,18 +9,14 @@ export const liveScriptsPlugin: Plugin = config => {
   return {
     document(_root, file, { scripts }) {
       documents[file] = scripts
-
       for (const script of scripts) {
         if (!script.isModule) {
           continue // Only module scripts can be refreshed.
         }
-        const outFile = config.getBuildPath(script.srcPath)
-        const id = baseRelative(outFile)
-        cache[id] = fs.readFileSync(outFile)
-        fs.writeFileSync(
-          outFile,
-          `await import("https://localhost:${config.server.port}${id}?t=" + Date.now())`
-        )
+        script.srcAttr.value = new URL(
+          script.srcAttr.value,
+          config.server.url
+        ).href
       }
     },
     hmr(clients) {

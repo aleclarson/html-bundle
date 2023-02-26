@@ -1,4 +1,4 @@
-import { Element, getAttribute, ParentNode } from '@web/parse5-utils'
+import { Attribute, Element, getAttribute, ParentNode } from '@web/parse5-utils'
 import * as esbuild from 'esbuild'
 import importGlobPlugin from 'esbuild-plugin-import-glob'
 import metaUrlPlugin from 'esbuild-plugin-meta-url'
@@ -23,10 +23,11 @@ export async function compileClientModule(
 }
 
 export interface RelativeScript {
-  node: Element
-  srcPath: string
-  outPath: string
-  isModule: boolean
+  readonly node: Element
+  readonly srcAttr: Attribute
+  readonly srcPath: string
+  readonly outPath: string
+  readonly isModule: boolean
 }
 
 export function findRelativeScripts(
@@ -44,6 +45,7 @@ export function findRelativeScripts(
       srcAttr.value = baseRelative(outPath)
       results.push({
         node: scriptNode,
+        srcAttr,
         srcPath,
         outPath,
         isModule: getAttribute(scriptNode, 'type') === 'module',

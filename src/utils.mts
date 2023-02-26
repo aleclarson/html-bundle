@@ -21,20 +21,26 @@ export async function loadBundleConfig(flags: Flags) {
       { files: 'package.json', rewrite: (config: any) => config?.bundle },
     ],
   })
-  const defaultPlugins: Plugin[] = await Promise.all([
-    unwrapDefault(import('./plugins/cssReload.mjs')),
-    unwrapDefault(import('./plugins/liveScripts.mjs')),
-  ])
+
   const userConfig = result.config as UserConfig
+  const defaultPlugins: Plugin[] = []
+  if (flags.watch) {
+    defaultPlugins.push(
+      await unwrapDefault(import('./plugins/cssReload.mjs')),
+      await unwrapDefault(import('./plugins/liveScripts.mjs'))
+    )
+  }
   if (flags.webext || userConfig.webext) {
     defaultPlugins.push(await unwrapDefault(import('./plugins/webext.mjs')))
   }
+
   const plugins = defaultPlugins.concat(userConfig.plugins || [])
   const browsers = userConfig.browsers ?? '>=0.25%, not dead'
   const srcDir = userConfig.src ?? 'src'
   const config: Config = {
     browsers,
     build: 'build',
+    assets: 'public',
     deletePrev: true,
     isCritical: false,
     ...userConfig,

@@ -57,7 +57,10 @@ async function build(files: string[], config: Config, flags: Flags) {
     server = await installHttpServer(config, servePlugins)
   }
 
-  // Set the HMR_PORT variable once the server port is known.
+  // At this point, the dev server URL and port are known.
+  config.esbuild.define['import.meta.env.DEV_URL'] = JSON.stringify(
+    config.server.url
+  )
   config.esbuild.define['import.meta.env.HMR_PORT'] = JSON.stringify(
     config.server.port
   )
@@ -177,6 +180,9 @@ async function installHttpServer(config: Config, servePlugins: ServePlugin[]) {
     serverOptions = {}
   }
 
+  // The dev server allows access to files within these directories.
+  const fsAllow = new RegExp(`^/(${[config.build, config.assets].join('|')})/`)
+
   const server = createServer(serverOptions, async (req, response) => {
     const request = Object.assign(req, parseURL(req.url!)) as Plugin.Request
     request.searchParams = new URLSearchParams(request.search || '')
@@ -184,32 +190,36 @@ async function installHttpServer(config: Config, servePlugins: ServePlugin[]) {
     let file: Plugin.VirtualFileData | null = null
     for (const plugin of servePlugins) {
       file = (await plugin.serve(request, response)) || null
-      if (file || response.headersSent) return
+      if (response.headersSent) return
+      if (file) break
     }
 
-    // If no plugin handled the request, check the virtual file system.
+    // If no plugin handled the request, check the virtual filesystem.
     if (!file) {
-      let virtualFile = config.virtualFiles[request.pathname]
+      const uri = request.pathname
+
+      let virtualFile = config.virtualFiles[uri]
       if (virtualFile) {
         if (typeof virtualFile == 'function') {
           virtualFile = virtualFile(request)
         }
         file = await virtualFile
       }
-    }
 
-    // If no virtual file exists, check the build directory.
-    if (!file && request.pathname.startsWith('/' + config.build)) {
-      try {
-        file = {
-          data: fs.readFileSync('.' + request.pathname),
-        }
-      } catch {}
+      // If no virtual file exists, check the local filesystem.
+      if (!file && fsAllow.test(uri)) {
+        try {
+          file = {
+            data: fs.readFileSync('.' + uri),
+          }
+        } catch {}
+      }
     }
 
     if (file) {
       const headers = (file.headers && lowercaseKeys(file.headers)) || {}
       headers['access-control-allow-origin'] ||= '*'
+      headers['cache-control'] ||= 'no-store'
       headers['content-type'] ||=
         mime.lookup(file.path || request.pathname) || 'application/octet-stream'
 
@@ -276,6 +286,7 @@ async function installWebSocketServer(
   }
 
   const compiledModules = new Map<string, Plugin.VirtualFileData>()
+  const runningModules = new Map<string, number>()
 
   class Client extends EventEmitter {
     readonly pendingRequests = new Set<string>()
@@ -293,24 +304,34 @@ async function installWebSocketServer(
       const moduleUrl = new URL(file, import.meta.url)
       const mtime = fs.statSync(moduleUrl).mtimeMs
 
-      let compiled = compiledModules.get(moduleUrl.href)
-      if (compiled?.mtime != mtime) {
-        const data = await compileClientModule(file, config, 'esm')
-        compiledModules.set(
-          moduleUrl.href,
-          (compiled = {
-            path: moduleUrl.pathname,
-            mtime,
-            data,
-          })
-        )
+      const path = `/${md5Hex(moduleUrl.href)}.${mtime}.js`
+      if (config.virtualFiles[path] == null) {
+        let compiled = compiledModules.get(moduleUrl.href)
+        if (compiled?.mtime != mtime) {
+          const data = await compileClientModule(file, config, 'esm')
+          compiledModules.set(
+            moduleUrl.href,
+            (compiled = {
+              path: moduleUrl.pathname,
+              mtime,
+              data,
+            })
+          )
+        }
+        config.virtualFiles[path] = compiled
       }
 
-      const path = `/${md5Hex(moduleUrl.href)}.${mtime}.js`
-      config.virtualFiles[path] = compiled
+      let parallelCount = runningModules.get(path) || 0
+      runningModules.set(path, parallelCount + 1)
 
       const result = await evaluate(this, path, args)
-      delete config.virtualFiles[path]
+
+      parallelCount = runningModules.get(path)!
+      runningModules.set(path, --parallelCount)
+      if (parallelCount == 0) {
+        delete config.virtualFiles[path]
+      }
+
       return result
     }
     getURL() {

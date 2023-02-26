@@ -15,16 +15,22 @@ export const cssReloadPlugin: Plugin = config => {
 
   return {
     document(_root, _file, { styles }) {
+      const buildPrefix = '/' + config.build + '/'
       styles.forEach(style => {
-        // TODO: get file hash
-        cssEntries.set(style.srcPath, '')
+        const srcAttr = style.srcAttr.value
+        if (srcAttr.startsWith(buildPrefix)) {
+          style.srcAttr.value = new URL(srcAttr, config.server.url).href
+
+          // TODO: get file hash
+          cssEntries.set(style.srcPath, '')
+        }
       })
     },
     hmr(clients) {
       return {
         accept: file => file.endsWith('.css'),
         async update() {
-          const updates: [file: string, cssText: string][] = []
+          const updates: [uri: string][] = []
           await Promise.all(
             Array.from(cssEntries.keys(), async (file, i) => {
               if (existsSync(file)) {
@@ -33,7 +39,9 @@ export const cssReloadPlugin: Plugin = config => {
                 })
                 const cssText = code.toString('utf8')
                 if (updateCssEntry(file, cssText)) {
-                  updates[i] = [baseRelative(outFile), cssText]
+                  const uri = baseRelative(outFile)
+                  config.virtualFiles[uri] = { data: cssText }
+                  updates[i] = [uri]
                 }
               } else {
                 cssEntries.delete(file)

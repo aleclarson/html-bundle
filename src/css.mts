@@ -54,8 +54,8 @@ export async function buildCSSFile(
 }
 
 export interface RelativeStyle {
-  srcAttr: Attribute
-  srcPath: string
+  readonly srcAttr: Attribute
+  readonly srcPath: string
 }
 
 export function findRelativeStyles(document: Node, file: string) {

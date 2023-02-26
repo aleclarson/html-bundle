@@ -8,9 +8,25 @@ import { Plugin, PluginInstance } from './src/plugin.mjs'
 export function defineConfig(config: UserConfig): typeof config
 
 export type UserConfig = {
+  /**
+   * The directory to crawl for HTML files.
+   * @default "src"
+   */
   src?: string
-  copy?: (string | Record<string, string>)[]
+  /**
+   * Where the build artifacts are saved.
+   * @default "build"
+   */
   build?: string
+  /**
+   * Where the assets directory is located.
+   * @default "public"
+   */
+  assets?: string
+  /**
+   * Files to copy to the build directory. Globs are supported.
+   */
+  copy?: (string | Record<string, string>)[]
   /**
    * Compile JS/CSS syntax to be compatible with the browsers that match
    * the given Browserslist query.
