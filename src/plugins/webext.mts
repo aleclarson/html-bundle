@@ -184,9 +184,11 @@ async function enableWebExtension(
     // Always run chromium first, as it's faster to launch.
     for (const target of targets.sort()) {
       let port: number | undefined
+      let targetConfig: WebExtension.SharedTargetConfig | undefined
 
       const params = {} as import('web-ext').CmdRunParams
       if (target == 'chromium') {
+        targetConfig = chromiumConfig
         params.chromiumBinary = resolveHome(chromiumConfig.binary)
         params.chromiumProfile = resolveHome(chromiumConfig.profile)
         params.args = chromiumConfig.args
@@ -194,6 +196,7 @@ async function enableWebExtension(
           params.keepProfileChanges = true
         }
       } else if (target == 'firefox-desktop') {
+        targetConfig = firefoxConfig
         params.firefox = resolveHome(firefoxConfig.binary || 'firefox')
         params.firefoxProfile = resolveHome(firefoxConfig.profile)
         params.firefoxPreview = []
@@ -224,6 +227,7 @@ async function enableWebExtension(
 
       await refreshOnRebuild(
         target,
+        targetConfig,
         runner,
         config,
         clients!,
@@ -252,6 +256,7 @@ async function enableWebExtension(
 
 async function refreshOnRebuild(
   target: WebExtension.RunTarget,
+  targetConfig: WebExtension.SharedTargetConfig | undefined,
   runner: import('web-ext').MultiExtensionRunner,
   config: Config,
   clients: Plugin.ClientSet,
@@ -280,6 +285,8 @@ async function refreshOnRebuild(
     return
   }
 
+  const inspect = targetConfig?.inspect ?? config.webext!.run!.inspect ?? false
+
   if (tabs.length) {
     let resolvedTabs = tabs
     if (target == 'firefox-desktop') {
@@ -289,7 +296,7 @@ async function refreshOnRebuild(
         url == 'about:newtab' ? 'chrome://newtab/' : url
       )
     }
-    await openTabs(port, resolvedTabs, manifest, isChromium)
+    await openTabs(port, resolvedTabs, manifest, inspect, isChromium)
   }
 
   let uuid: string
@@ -356,7 +363,7 @@ async function refreshOnRebuild(
 
     if (missingTabs.length) {
       try {
-        await openTabs(port, missingTabs, manifest, isChromium, true)
+        await openTabs(port, missingTabs, manifest, inspect, isChromium, true)
       } catch (e: any) {
         console.error(e.message)
       }
@@ -415,17 +422,19 @@ async function openTabs(
   port: number,
   tabs: string[],
   manifest: any,
+  inspect: boolean,
   isChromium: boolean,
   isRefresh?: boolean
 ) {
-  const targets = await retryForever(() => chromeRemote.List({ port }))
-  const firstTab = targets.find(t => t.type == 'page')
+  let targets = await retryForever(() => chromeRemote.List({ port }))
 
+  const firstTab = targets.find(t => t.type == 'page')
   const browser = await chromeRemote({
     port,
     target: targets[0],
   })
 
+  let firstOpenedId!: string
   await Promise.all(
     tabs.map(async (url, i) => {
       let target: chromeRemote.Client
@@ -445,6 +454,10 @@ async function openTabs(
           needsNavigate = true
         }
         targetId = (await browser.send('Target.createTarget', params)).targetId
+      }
+
+      if (i == 0) {
+        firstOpenedId = targetId
       }
 
       target = await chromeRemote({
@@ -491,20 +504,21 @@ async function openTabs(
       }
     })
   )
+
+  if (inspect) {
+    await retryForever(async () => {
+      const target = await chromeRemote({ port, target: firstOpenedId })
+      await target.send('Runtime.evaluate', {
+        expression: 'inspect(document)',
+      })
+    })
+  }
 }
 
 async function retryForever<T>(task: () => Promise<T>) {
-  const start = Date.now()
   while (true) {
     try {
       return await task()
-    } catch (err: any) {
-      // console.error(
-      //   err.message.includes('404 Not Found') ? 'Browser not ready' : err
-      // )
-      if (Date.now() - start > 3000) {
-        throw err
-      }
-    }
+    } catch {}
   }
 }

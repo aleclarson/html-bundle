@@ -64,27 +64,29 @@ export namespace WebExtension {
   type RunOptions = {
     target?: RunTarget | RunTarget[]
     startUrl?: string | string[]
-    firefox?: FirefoxRunOptions
-    chromium?: ChromiumRunOptions
-    reload?: boolean
+    firefox?: FirefoxTargetConfig
+    chromium?: ChromiumTargetConfig
+    inspect?: boolean
     keepProfileChanges?: boolean
   }
 
-  type FirefoxRunOptions = {
-    binary?: 'firefox' | 'beta' | 'nightly' | 'deved' | (string & {})
+  type SharedTargetConfig = {
     profile?: string
     keepProfileChanges?: boolean
+    inspect?: boolean
+    args?: string[]
+  }
+
+  type FirefoxTargetConfig = SharedTargetConfig & {
+    binary?: 'firefox' | 'beta' | 'nightly' | 'deved' | (string & {})
+    profile?: string
     devtools?: boolean
     browserConsole?: boolean
     preInstall?: boolean
-    args?: string[]
   }
 
-  type ChromiumRunOptions = {
+  type ChromiumTargetConfig = SharedTargetConfig & {
     binary?: string
-    profile?: string
-    keepProfileChanges?: boolean
-    args?: string[]
   }
 }
 
