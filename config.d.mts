@@ -25,8 +25,8 @@ export type UserConfig = {
 }
 
 export type ServerConfig = {
-  port: number
-  hmrPort: number
+  port?: number
+  https?: { cert: string; key: string }
 }
 
 export namespace WebExtension {
@@ -69,8 +69,11 @@ export type Config = Merge<
   {
     plugins: PluginInstance[]
     events: EventEmitter
-    watcher?: import('chokidar').FSWatcher
     getBuildPath(file: string): string
+    esbuild: esbuild.BuildOptions & {
+      define: Record<string, string>
+    }
+    watcher?: import('chokidar').FSWatcher
     webext?: WebExtension.Config
   }
 >

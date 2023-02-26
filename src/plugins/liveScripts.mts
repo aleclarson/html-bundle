@@ -1,4 +1,3 @@
-import { getAttribute } from '@web/parse5-utils'
 import fs from 'fs'
 import { buildRelativeScripts, RelativeScript } from '../esbuild.mjs'
 import { Plugin } from '../plugin.mjs'
@@ -6,7 +5,6 @@ import { baseRelative } from '../utils.mjs'
 
 export const liveScriptsPlugin: Plugin = config => {
   const cache: Record<string, Buffer> = {}
-  const extRegex = /\.js(\.map)?$/
   const documents: Record<string, RelativeScript[]> = {}
 
   return {
@@ -22,13 +20,17 @@ export const liveScriptsPlugin: Plugin = config => {
         cache[id] = fs.readFileSync(outFile)
         fs.writeFileSync(
           outFile,
-          `await import("http://localhost:${config.server.port}${id}")`
+          `await import("https://localhost:${config.server.port}${id}")`
         )
       }
     },
     hmr({ clients }) {
       return {
-        accept: file => extRegex.test(file),
+        // FIXME: We should only accept files that we know are used in
+        // bundled entry scripts with the type="module" attribute, as
+        // those are the only scripts we can update without reloading
+        // the extension.
+        accept: file => /\.[tj]sx?$/.test(file),
         async update() {
           for (const scripts of Object.values(documents)) {
             const { outputFiles } = await buildRelativeScripts(
@@ -47,14 +49,27 @@ export const liveScriptsPlugin: Plugin = config => {
     },
     serve(req, res) {
       const uri = req.pathname
-      if (uri && extRegex.test(uri)) {
+      if (uri && /\.js(\.map)?$/.test(uri)) {
+        let buffer = cache[uri]
+        if (!buffer && uri.startsWith('/' + config.build)) {
+          try {
+            // When code splitting is performed on each entry script,
+            // the resulting "chunks" aren't stored in our cache until
+            // the first HMR update.
+            buffer = cache[uri] = fs.readFileSync('.' + uri)
+          } catch {}
+        }
+        if (!buffer) {
+          return
+        }
         res.setHeader(
           'Content-Type',
           uri.endsWith('.js') ? 'application/javascript' : 'application/json'
         )
         res.setHeader('Cache-Control', 'no-store')
         res.setHeader('Access-Control-Allow-Origin', '*')
-        res.write(cache[uri])
+        res.write(buffer)
+        res.end()
         return true
       }
     },

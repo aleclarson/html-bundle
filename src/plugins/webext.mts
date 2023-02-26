@@ -24,35 +24,47 @@ function parseContentSecurityPolicy(str: string) {
   const policies = str.split(/ *; */)
   const result: Record<string, Set<string>> = {}
   for (const policy of policies) {
+    if (!policy) continue
     const [name, ...values] = policy.split(/ +/)
     result[name] = new Set(values)
   }
   Object.defineProperty(result, 'toString', {
     value: () => {
-      return Object.entries(result)
-        .map(([name, values]) => `${name} ${[...values].join(' ')}`)
-        .join('; ')
+      return (
+        Object.entries(result)
+          .map(([name, values]) => `${name} ${[...values].join(' ')}`)
+          .join('; ') + ';'
+      )
     },
   })
   return result
 }
 
 async function enableWebExtension(config: Config, flags: Flags) {
-  const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'))
+  const rawManifest = fs.readFileSync('manifest.json', 'utf8')
+  const manifest = JSON.parse(rawManifest)
   if (flags.watch) {
-    const originalManifest = structuredClone(manifest)
+    // Allow connections to the dev server.
+    const devServerHost = 'localhost:' + config.server.port
+    manifest.permissions.push('https://' + devServerHost + '/*')
+    manifest.permissions.push('wss://' + devServerHost + '/*')
 
-    // Allow scripts to be loaded from the dev server.
     const csp = parseContentSecurityPolicy(manifest.content_security_policy)
-    csp['script-src'].add('http://localhost:' + config.server.port)
-    manifest.content_security_policy = csp.toString()
+    csp['default-src'] ||= new Set(["'self'"])
+    for (const key in csp) {
+      csp[key].add('https://' + devServerHost)
+      if (key == 'default-src' || key == 'connect-src') {
+        csp[key].add('wss://' + devServerHost)
+      }
+    }
 
+    // Save our changes…
+    manifest.content_security_policy = csp.toString()
     fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2))
+
+    // …but revert them once we exit.
     exitHook(() => {
-      fs.writeFileSync(
-        'manifest.json',
-        JSON.stringify(originalManifest, null, 2)
-      )
+      fs.writeFileSync('manifest.json', rawManifest)
     })
   }
 
@@ -137,6 +149,7 @@ async function enableWebExtension(config: Config, flags: Flags) {
         sourceDir: process.cwd(),
         artifactsDir,
         noReload: true,
+        profileCreateIfMissing: true,
       })
 
       await refreshOnRebuild(target, runner, manifest, tabs, port).catch(e => {
@@ -187,7 +200,6 @@ async function refreshOnRebuild(
     return
   }
 
-  console.log(target + ':', { port, extProtocol })
   if (tabs.length) {
     let resolvedTabs = tabs
     if (target == 'firefox-desktop') {
@@ -236,7 +248,6 @@ async function refreshOnRebuild(
     const extOrigin = extProtocol + '//' + uuid
 
     console.log(cyan('↺'), extOrigin)
-    console.log(target + ':', { port, extProtocol })
 
     // Chromium reloads automatically, and we can't stop it.
     if (!isChromium) {
@@ -328,8 +339,6 @@ async function openTabs(
 
   await Promise.all(
     tabs.map(async (url, i) => {
-      console.log('opening:', { url, isChromium })
-
       let target: chromeRemote.Client
       let targetId: string
       let needsNavigate = false

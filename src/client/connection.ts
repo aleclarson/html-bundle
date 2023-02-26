@@ -1,8 +1,7 @@
 /// <reference lib="dom" />
 
 function connect() {
-  const port = process.env.HMR_PORT
-  const ws = new WebSocket('ws://localhost:' + port)
+  const ws = new WebSocket('wss://localhost:' + import.meta.env.HMR_PORT)
   ws.onmessage = async ({ data }) => {
     const { id, body, env } = JSON.parse(data)
     const module = { exports: undefined }

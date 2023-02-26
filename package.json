@@ -6,7 +6,7 @@
   },
   "scripts": {
     "dev": "tsc --build -w",
-    "build": "tsc --build",
+    "build": "tsc --build --clean",
     "update": "npx npm-check-updates -u && npx typesync && npm i && npm outdated"
   },
   "keywords": [

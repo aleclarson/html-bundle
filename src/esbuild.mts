@@ -18,10 +18,6 @@ export async function compileClientModule(
     write: false,
     format: format ?? 'iife',
     entryPoints: [filePath],
-    define: {
-      'process.env.HMR_PORT': `"${config.server.hmrPort}"`,
-      ...config.esbuild.define,
-    },
   })
   return result.outputFiles[0].text
 }
@@ -79,10 +75,5 @@ export function buildRelativeScripts(
       importGlobPlugin(),
       ...(config.esbuild.plugins || []),
     ],
-    define: {
-      'process.env.NODE_ENV': `"${process.env.NODE_ENV}"`,
-      'process.env.HMR_PORT': `"${config.server.hmrPort}"`,
-      ...config.esbuild.define,
-    },
   })
 }

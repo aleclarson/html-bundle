@@ -1,3 +1,3 @@
-declare const ws: WebSocket
+/// <reference path="../../client.d.ts" />
+
 declare const module: { exports: any }
-declare const process: { env: Record<string, string> }

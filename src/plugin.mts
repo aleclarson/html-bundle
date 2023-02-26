@@ -9,7 +9,7 @@ import { RelativeStyle } from './css.mjs'
 import { RelativeScript } from './esbuild.mjs'
 
 export interface Plugin {
-  (config: Config, flags: Flags): PluginInstance
+  (config: Config, flags: Flags): PluginInstance | Promise<PluginInstance>
 }
 
 export interface PluginInstance {

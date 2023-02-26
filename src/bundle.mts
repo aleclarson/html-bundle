@@ -2,7 +2,7 @@
 
 import cac from 'cac'
 import { EventEmitter } from 'events'
-import { readdir, rm } from 'fs/promises'
+import * as fs from 'fs'
 import glob from 'glob'
 import { cyan, red, yellow } from 'kleur/colors'
 import * as path from 'path'
@@ -26,13 +26,13 @@ cli
   .option('--critical', `[boolean]`)
   .option('--webext <target>', 'Override webext config')
   .action(async flags => {
+    process.env.NODE_ENV ||= flags.watch ? 'development' : 'production'
     const config = await loadBundleConfig(flags)
     glob(`${config.src}/**/*.html`, (err, files) => {
       if (err) {
         console.error(err)
         process.exit(1)
       }
-      process.env.NODE_ENV = flags.watch ? 'development' : 'production'
       build(files, config, flags)
     })
   })
@@ -47,30 +47,46 @@ export interface Flags {
 
 async function build(files: string[], config: Config, flags: Flags) {
   if (config.deletePrev) {
-    await rm(config.build, { force: true, recursive: true })
+    fs.rmSync(config.build, { force: true, recursive: true })
   }
 
+  let server: import('https').Server | undefined
   if (flags.watch) {
     const servePlugins = config.plugins.filter(p => p.serve) as ServePlugin[]
     if (servePlugins.length) {
-      const http = await import('http')
-      const server = http.createServer((req, response) => {
+      config.server.https ??= await getCertificate(
+        'node_modules/.html-bundle/self-signed'
+      ).then(certificate => ({
+        cert: certificate,
+        key: certificate,
+      }))
+
+      const https = await import('https')
+      server = https.createServer(config.server.https, (req, response) => {
         const request = Object.assign(req, parseURL(req.url!)) as Plugin.Request
         const handled = servePlugins.some(p => p.serve(request, response))
         if (!handled) {
+          console.log(red('404: %s'), req.url)
           response.statusCode = 404
           response.end()
         }
       })
+
       let port = config.server.port
       if (port == 0) {
         port = config.server.port = await findFreeTcpPort()
       }
+
       server.listen(port, () => {
-        console.log(cyan('http server listening on port %s'), port)
+        console.log(cyan('https server listening on port %s'), port)
       })
     }
   }
+
+  // Set the HMR_PORT variable once the server port is known.
+  config.esbuild.define['import.meta.env.HMR_PORT'] = JSON.stringify(
+    config.server.port
+  )
 
   const timer = performance.now()
   files = files.map(file => path.resolve(file))
@@ -92,17 +108,18 @@ async function build(files: string[], config: Config, flags: Flags) {
     if (hmrPlugins.length) {
       const events = new EventEmitter()
       const clients = new Set<Plugin.Client>()
+      const requests: Record<string, Function> = {}
+
       const context: Plugin.HmrContext = {
         clients,
         on: events.on.bind(events),
       }
+
       hmrPlugins.forEach(plugin => {
         hmrInstances.push(plugin.hmr(context))
       })
-      const wss = new ws.WebSocketServer({
-        port: config.server?.hmrPort ?? 5001,
-      })
-      const requests: Record<string, Function> = {}
+
+      const wss = new ws.WebSocketServer({ server })
       wss.on('connection', socket => {
         const pendingRequests = new Set<string>()
         const evaluate = (body: string, env: Record<string, any> = {}) => {
@@ -162,7 +179,7 @@ async function build(files: string[], config: Config, flags: Flags) {
 
     watcher.on('add', async file => {
       await rebuild()
-      console.log(cyan('add'), file)
+      console.log(cyan('+'), file)
     })
 
     watcher.on('change', async file => {
@@ -173,16 +190,16 @@ async function build(files: string[], config: Config, flags: Flags) {
     watcher.on('unlink', async file => {
       const outPath = config.getBuildPath(file).replace(/\.[jt]sx?$/, '.js')
       try {
-        await rm(outPath)
+        fs.rmSync(outPath)
         let outDir = path.dirname(outPath)
         while (outDir !== config.build) {
-          const stats = await readdir(outDir)
+          const stats = fs.readdirSync(outDir)
           if (stats.length) break
-          await rm(outDir)
+          fs.rmSync(outDir)
           outDir = path.dirname(outDir)
         }
       } catch {}
-      console.log(red('delete'), file)
+      console.log(red('–'), file)
     })
 
     const rebuild = debounce(async () => {
@@ -192,7 +209,7 @@ async function build(files: string[], config: Config, flags: Flags) {
 
       const acceptedFiles = new Map<Plugin.HmrInstance, string[]>()
       accept: for (const file of changedFiles) {
-        console.log(cyan('update'), file)
+        console.log(cyan('↺'), file)
         for (const hmr of hmrInstances) {
           if (hmr.accept(file)) {
             let files = acceptedFiles.get(hmr)
@@ -226,5 +243,26 @@ async function build(files: string[], config: Config, flags: Flags) {
     }, 200)
 
     console.log(yellow('watching files...'))
+  }
+}
+
+async function getCertificate(cacheDir: string) {
+  const cachePath = path.join(cacheDir, '_cert.pem')
+  try {
+    const stat = fs.statSync(cachePath)
+    const content = fs.readFileSync(cachePath, 'utf8')
+    if (Date.now() - stat.ctime.valueOf() > 30 * 24 * 60 * 60 * 1000) {
+      throw 'Certificate is too old'
+    }
+    return content
+  } catch {
+    const content = (
+      await import('./https/createCertificate.mjs')
+    ).createCertificate()
+    try {
+      fs.mkdirSync(cacheDir, { recursive: true })
+      fs.writeFileSync(cachePath, content)
+    } catch {}
+    return content
   }
 }

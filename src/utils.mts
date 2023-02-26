@@ -12,6 +12,8 @@ import { Config, UserConfig } from '../config.mjs'
 import { Flags } from './bundle.mjs'
 import { Plugin } from './plugin.mjs'
 
+const env = JSON.stringify
+
 export async function loadBundleConfig(flags: Flags) {
   const result = await loadConfig<UserConfig>({
     sources: [
@@ -48,6 +50,11 @@ export async function loadBundleConfig(flags: Flags) {
     esbuild: {
       ...userConfig.esbuild,
       target: userConfig.esbuild?.target ?? browserslistToEsbuild(targets),
+      define: {
+        'import.meta.env.DEV': env(flags.watch),
+        'process.env.NODE_ENV': env(process.env.NODE_ENV),
+        ...userConfig.esbuild?.define,
+      },
     } as any,
     lightningCss: {
       ...userConfig.lightningCss,
@@ -61,7 +68,6 @@ export async function loadBundleConfig(flags: Flags) {
     },
     server: {
       port: 0,
-      hmrPort: 5001,
       ...userConfig.server,
     },
     getBuildPath(file) {
@@ -81,9 +87,11 @@ export async function loadBundleConfig(flags: Flags) {
       return file.replace(/\.([cm]?)(?:jsx|tsx?)$/, '.$1js')
     },
   }
-  plugins.forEach(setup => {
-    config.plugins.push(setup(config, flags))
-  })
+  await Promise.all(
+    plugins.map(async setup => {
+      config.plugins.push(await setup(config, flags))
+    })
+  )
   return config
 }
 
