@@ -50,7 +50,7 @@
     "chrome-remote-interface": "^0.32.1",
     "critters": "^0.0.16",
     "esbuild": "^0.17.3",
-    "esbuild-plugin-import-glob": "npm:@alloc/esbuild-plugin-import-glob@^0.1.4",
+    "esbuild-plugin-import-glob": "npm:@alloc/esbuild-plugin-import-glob@^0.1.6",
     "esbuild-plugin-meta-url": "npm:@chialab/esbuild-plugin-meta-url@^0.17.2",
     "execa": "^7.0.0",
     "exit-hook": "^3.2.0",

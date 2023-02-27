@@ -24,7 +24,7 @@ specifiers:
   chrome-remote-interface: ^0.32.1
   critters: ^0.0.16
   esbuild: ^0.17.3
-  esbuild-plugin-import-glob: npm:@alloc/esbuild-plugin-import-glob@^0.1.4
+  esbuild-plugin-import-glob: npm:@alloc/esbuild-plugin-import-glob@^0.1.6
   esbuild-plugin-meta-url: npm:@chialab/esbuild-plugin-meta-url@^0.17.2
   execa: ^7.0.0
   exit-hook: ^3.2.0
@@ -56,7 +56,7 @@ dependencies:
   chrome-remote-interface: 0.32.1
   critters: 0.0.16
   esbuild: 0.17.10
-  esbuild-plugin-import-glob: /@alloc/esbuild-plugin-import-glob/0.1.4
+  esbuild-plugin-import-glob: /@alloc/esbuild-plugin-import-glob/0.1.6
   esbuild-plugin-meta-url: /@chialab/esbuild-plugin-meta-url/0.17.2_4yu6gcteo5hmvzenkuzminzeqm
   execa: 7.0.0
   exit-hook: 3.2.0
@@ -91,8 +91,8 @@ devDependencies:
 
 packages:
 
-  /@alloc/esbuild-plugin-import-glob/0.1.4:
-    resolution: {integrity: sha512-KgkiV01TCvmVowJiJ8F9+WrmrhNgK1omK+X8PKc1x5qpr0/iq7S3Mq+XArr4P1yHHtCCqmv+ShpibnT+4M9Zng==}
+  /@alloc/esbuild-plugin-import-glob/0.1.6:
+    resolution: {integrity: sha512-f4Gv4gonr3O1q5NaRhBJmePKXcgi5iR8BgInFrzlImg2ScdZISzGdJOi/mZ4rOqKuYZE+mCVWYLdq/1eQfeIug==}
     dependencies:
       '@babel/core': 7.21.0
       esbuild-rna: /@chialab/esbuild-rna/0.17.3
