@@ -12,6 +12,7 @@ Divergent fork of `html-bundle` that I made for simple-as-fuck SPA setups. Unfor
 - HTML entry point scanning
 - JS/CSS bundling
 - `import.meta.glob` support
+- worker bundling with `new URL('./worker.ts', import.meta.url)`
 - `--watch` mode
   - CSS hot reloading
   - HTML rebuild on JS/HTML changes
