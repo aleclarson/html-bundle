@@ -13,6 +13,9 @@ Divergent fork of `html-bundle` that I made for simple-as-fuck SPA setups. Unfor
 - JS/CSS bundling
 - `import.meta.glob` support
 - worker bundling with `new URL('./worker.ts', import.meta.url)`
+- great for [Web Extension](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions) development
+  - dev server for painless extension reloading
+  - run multiple browsers at once (or use `--webext=chromium` to only run Chrome)
 - `--watch` mode
   - CSS hot reloading
   - HTML rebuild on JS/HTML changes
