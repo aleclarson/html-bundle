@@ -22,11 +22,16 @@ const polyfillPath = path.resolve(
 
 export const webextPlugin: Plugin = async (config, flags) => {
   const webextConfig = config.webext!
-  const manifest = await loadManifest(webextConfig, config, flags)
+  const { manifest, scripts, ignoredFiles } = await loadManifest(
+    webextConfig,
+    config,
+    flags
+  )
 
-  const { scripts, ignoredFiles } = getManifestFiles(manifest, config, flags)
+  // Add the web extension scripts to the build.
   config.entries.push(...scripts)
 
+  // Copy the webextension-polyfill to the build if needed.
   if (webextConfig.polyfill) {
     config.copy.push({
       [polyfillPath]: 'browser-polyfill.min.js',
@@ -171,6 +176,8 @@ async function loadManifest(
       (await plugin.webext(manifest, webextConfig)) || isManifestChanged
   }
 
+  const { scripts, ignoredFiles } = getManifestFiles(manifest, config, flags)
+
   if (isManifestChanged) {
     // Save our changes…
     fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, 2))
@@ -180,17 +187,52 @@ async function loadManifest(
     })
   }
 
-  return manifest
+  return {
+    manifest,
+    scripts,
+    ignoredFiles,
+  }
 }
 
 function getManifestFiles(manifest: any, config: Config, flags: Flags) {
   const ignoredFiles = new Set(fs.readdirSync(process.cwd()))
-  const files = new Set<string>()
+  const keptFiles = new Set<string>()
 
   const keepFile = (file: string | undefined, watch?: boolean) => {
     if (typeof file == 'string') {
-      ignoredFiles.delete(file.split('/')[0])
-      files.add(file)
+      let outFile: string
+      if (file.startsWith(config.src + '/')) {
+        outFile = config.getBuildPath(file)
+      } else {
+        outFile = file
+      }
+
+      // Remove the file and its ancestors from the ignored list.
+      outFile
+        .split('/')
+        .reverse()
+        .forEach((file, index, files) => {
+          const parentFile = files
+            .slice(index + 1)
+            .reverse()
+            .join('/')
+
+          // Add sibling files to the ignored list.
+          if (parentFile) {
+            file = files[index] = path.join(parentFile, file)
+            if (ignoredFiles.has(parentFile)) {
+              fs.readdirSync(parentFile).forEach(child => {
+                child = path.join(parentFile, child)
+                if (child != file && !keptFiles.has(child)) {
+                  ignoredFiles.add(child)
+                }
+              })
+            }
+          }
+
+          ignoredFiles.delete(file)
+          keptFiles.add(file)
+        })
 
       watch ??= flags.watch && !file.startsWith(config.build + '/')
       if (watch && fs.existsSync(file)) {
@@ -216,7 +258,6 @@ function getManifestFiles(manifest: any, config: Config, flags: Flags) {
         keepFile(file)
         if (file.startsWith(config.src + '/')) {
           arg[index] = config.getBuildPath(file)
-          console.log('%s => %s', file, arg[index])
           return true
         }
       })
@@ -231,6 +272,7 @@ function getManifestFiles(manifest: any, config: Config, flags: Flags) {
   keepFile(config.assets)
   keepFile(manifest.browser_action?.default_popup)
   keepFiles(manifest.browser_action?.default_icon)
+  keepFiles(manifest.web_accessible_resources)
   keepFiles(manifest.chrome_url_overrides)
   keepFiles(manifest.icons)
 
