@@ -30,9 +30,10 @@ const cli = cac('html-bundle')
 cli
   .command('')
   .option('--watch', `[boolean]`)
+  .option('--minify', `[boolean]`)
   .option('--critical', `[boolean]`)
   .option('--webext <target>', 'Override webext config')
-  .action(async flags => {
+  .action(async (flags: Flags) => {
     process.env.NODE_ENV ||= flags.watch ? 'development' : 'production'
     const config = await loadBundleConfig(flags)
     await bundle(config, flags)
@@ -42,6 +43,7 @@ cli.parse()
 
 export interface Flags {
   watch?: boolean
+  minify?: boolean
   critical?: boolean
   webext?: WebExtension.RunTarget | WebExtension.RunTarget[]
 }

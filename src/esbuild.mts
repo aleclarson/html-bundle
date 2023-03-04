@@ -57,7 +57,7 @@ export function findRelativeScripts(
 export function buildEntryScripts(
   scripts: string[],
   config: Config,
-  flags: { watch?: boolean; write?: boolean } = {}
+  flags: { watch?: boolean; write?: boolean; minify?: boolean } = {}
 ) {
   for (const srcPath of scripts) {
     console.log(yellow('⌁'), baseRelative(srcPath))
@@ -67,7 +67,7 @@ export function buildEntryScripts(
     charset: 'utf8',
     splitting: true,
     sourcemap: flags.watch,
-    minify: !flags.watch,
+    minify: !flags.watch && flags.minify != false,
     ...config.esbuild,
     write: flags.write != false,
     bundle: true,
