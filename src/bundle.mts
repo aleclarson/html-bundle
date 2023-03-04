@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
+import { ParentNode } from '@web/parse5-utils'
 import cac from 'cac'
 import { EventEmitter } from 'events'
 import * as fs from 'fs'
-import glob from 'glob'
 import { cyan, red, yellow } from 'kleur/colors'
 import md5Hex from 'md5-hex'
 import * as mime from 'mrmime'
@@ -14,8 +14,14 @@ import { parse as parseURL } from 'url'
 import * as uuid from 'uuid'
 import * as ws from 'ws'
 import { Config, WebExtension } from '../config.mjs'
-import { compileClientModule } from './esbuild.mjs'
-import { buildHTML } from './html.mjs'
+import { copyFiles } from './copy.mjs'
+import {
+  buildEntryScripts,
+  compileClientModule,
+  findRelativeScripts,
+  RelativeScript,
+} from './esbuild.mjs'
+import { buildHTML, parseHTML } from './html.mjs'
 import { HmrPlugin, Plugin, ServePlugin } from './plugin.mjs'
 import { findFreeTcpPort, loadBundleConfig, lowercaseKeys } from './utils.mjs'
 
@@ -29,13 +35,7 @@ cli
   .action(async flags => {
     process.env.NODE_ENV ||= flags.watch ? 'development' : 'production'
     const config = await loadBundleConfig(flags)
-    glob(`${config.src}/**/*.html`, (err, files) => {
-      if (err) {
-        console.error(err)
-        process.exit(1)
-      }
-      build(files, config, flags)
-    })
+    await bundle(config, flags)
   })
 
 cli.parse()
@@ -46,7 +46,7 @@ export interface Flags {
   webext?: WebExtension.RunTarget | WebExtension.RunTarget[]
 }
 
-async function build(files: string[], config: Config, flags: Flags) {
+async function bundle(config: Config, flags: Flags) {
   if (config.deletePrev) {
     fs.rmSync(config.build, { force: true, recursive: true })
   }
@@ -65,9 +65,47 @@ async function build(files: string[], config: Config, flags: Flags) {
     config.server.port
   )
 
+  type HTMLEntry = {
+    document: ParentNode
+    scripts: RelativeScript[]
+  }
+
+  const build = async (entries: string[]) => {
+    const htmlEntries = new Map<string, HTMLEntry>()
+    const entryScripts = new Set<string>()
+
+    for (const entry of entries) {
+      if (entry.endsWith('.html')) {
+        const html = fs.readFileSync(entry, 'utf8')
+        const document = parseHTML(html)
+        const scripts = findRelativeScripts(document, entry, config)
+        htmlEntries.set(entry, { document, scripts })
+        for (const script of scripts) {
+          entryScripts.add(script.srcPath)
+        }
+      } else if (/\.[mc]?[tj]sx?$/.test(entry)) {
+        entryScripts.add(entry)
+      }
+    }
+
+    await Promise.all([
+      ...Array.from(htmlEntries, ([entry, { document, scripts }]) =>
+        buildHTML(entry, document, scripts, config, flags)
+      ),
+      buildEntryScripts([...entryScripts], config, flags),
+    ])
+
+    if (config.copy) {
+      await copyFiles(config.copy, config)
+    }
+  }
+
+  const entries = Array.from(
+    new Set(config.entries.map(file => path.resolve(file)))
+  )
+
   const timer = performance.now()
-  files = files.map(file => path.resolve(file))
-  await Promise.all(files.map(file => buildHTML(file, config, flags)))
+  await build(entries)
   console.log(
     cyan('build complete in %sms'),
     (performance.now() - timer).toFixed(2)
@@ -140,7 +178,7 @@ async function build(files: string[], config: Config, flags: Flags) {
       if (needRebuild) {
         config.events.emit('will-rebuild')
         const timer = performance.now()
-        await Promise.all(files.map(file => buildHTML(file, config, flags)))
+        await build(entries)
         config.events.emit('rebuild')
 
         for (const plugin of config.plugins) {

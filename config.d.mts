@@ -91,6 +91,7 @@ export namespace WebExtension {
 export type Config = Merge<
   Required<UserConfig>,
   {
+    entries: string[]
     plugins: PluginInstance[]
     events: EventEmitter
     virtualFiles: Record<string, Plugin.VirtualFile>

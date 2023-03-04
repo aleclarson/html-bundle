@@ -1,54 +1,55 @@
 import {
   appendChild,
+  createElement,
   createScript,
   findElement,
   ParentNode,
 } from '@web/parse5-utils'
 import Critters from 'critters'
-import { copyFile, readFile, writeFile } from 'fs/promises'
-import glob from 'glob'
+import { writeFile } from 'fs/promises'
 import { minify } from 'html-minifier-terser'
-import { cyan } from 'kleur/colors'
+import { yellow } from 'kleur/colors'
 import { parse, parseFragment, serialize } from 'parse5'
 import * as path from 'path'
 import { Config } from '../config.mjs'
 import { buildRelativeStyles, findRelativeStyles } from './css.mjs'
-import {
-  buildRelativeScripts,
-  compileClientModule,
-  findRelativeScripts,
-} from './esbuild.mjs'
-import { createDir, relative } from './utils.mjs'
+import { compileClientModule, RelativeScript } from './esbuild.mjs'
+import { baseRelative, createDir, relative } from './utils.mjs'
 
 export function parseHTML(html: string) {
-  return (
+  const document = (
     html.includes('<!DOCTYPE html>') || html.includes('<html')
       ? parse(html)
       : parseFragment(html)
   ) as ParentNode
+
+  if (!findElement(document, e => e.tagName == 'head')) {
+    const head = createElement('head')
+    appendChild(document, head)
+  }
+  if (!findElement(document, e => e.tagName == 'body')) {
+    const body = createElement('body')
+    appendChild(document, body)
+  }
+
+  return document
 }
 
 let critters: Critters
 
 export async function buildHTML(
   file: string,
+  document: ParentNode,
+  scripts: RelativeScript[],
   config: Config,
   flags: { watch?: boolean; critical?: boolean }
 ) {
-  let html = await readFile(file, 'utf8')
-  if (!html) return
+  console.log(yellow('⌁'), baseRelative(file))
 
   const outFile = config.getBuildPath(file)
-
-  const document = parseHTML(html)
-  const scripts = findRelativeScripts(document, file, config)
   const styles = findRelativeStyles(document, file)
-
   try {
-    await Promise.all([
-      buildRelativeScripts(scripts, config, flags),
-      buildRelativeStyles(styles, config, flags),
-    ])
+    await buildRelativeStyles(styles, config, flags)
   } catch (e) {
     console.error(e)
     return
@@ -73,7 +74,7 @@ export async function buildHTML(
     appendChild(head, hmrScript)
   }
 
-  html = serialize(document)
+  let html = serialize(document)
 
   if (!flags.watch) {
     try {
@@ -106,50 +107,6 @@ export async function buildHTML(
 
   await createDir(outFile)
   await writeFile(outFile, html)
-
-  if (config.copy) {
-    let copied = 0
-    for (let pattern of config.copy) {
-      if (typeof pattern != 'string') {
-        Object.entries(pattern).forEach(async ([srcPath, outPath]) => {
-          if (path.isAbsolute(outPath)) {
-            return console.error(
-              `Failed to copy "${srcPath}" to "${outPath}": Output path must be relative`
-            )
-          }
-          if (outPath.startsWith('..')) {
-            return console.error(
-              `Failed to copy "${srcPath}" to "${outPath}": Output path must not be outside build directory`
-            )
-          }
-          outPath = path.resolve(config.build, outPath)
-          await createDir(outPath)
-          await copyFile(srcPath, outPath)
-          copied++
-        })
-      } else if (glob.hasMagic(pattern)) {
-        glob(pattern, (err, matchedPaths) => {
-          if (err) {
-            console.error(err)
-          } else {
-            matchedPaths.forEach(async srcPath => {
-              const outPath = config.getBuildPath(srcPath)
-              await createDir(outPath)
-              await copyFile(srcPath, outPath)
-              copied++
-            })
-          }
-        })
-      } else {
-        const srcPath = pattern
-        const outPath = config.getBuildPath(srcPath)
-        await createDir(outPath)
-        await copyFile(pattern, outPath)
-        copied++
-      }
-    }
-    console.log(cyan('copied %s %s'), copied, copied == 1 ? 'file' : 'files')
-  }
 
   return html
 }

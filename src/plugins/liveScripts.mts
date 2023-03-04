@@ -1,4 +1,4 @@
-import { buildRelativeScripts, RelativeScript } from '../esbuild.mjs'
+import { buildEntryScripts, RelativeScript } from '../esbuild.mjs'
 import { Plugin } from '../plugin.mjs'
 import { baseRelative } from '../utils.mjs'
 
@@ -28,16 +28,23 @@ export const liveScriptsPlugin: Plugin = config => {
         accept: file => /\.m?[tj]sx?$/.test(file),
         async update() {
           for (const scripts of Object.values(documents)) {
-            const { outputFiles } = await buildRelativeScripts(
-              scripts,
-              config,
-              { watch: true, write: false }
-            )
-            for (const file of outputFiles!) {
-              const id = baseRelative(file.path)
-              cache[id] = Buffer.from(file.contents)
+            try {
+              const { outputFiles } = await buildEntryScripts(
+                scripts.map(script => script.srcPath),
+                config,
+                {
+                  watch: true,
+                  write: false,
+                }
+              )
+              for (const file of outputFiles!) {
+                const id = baseRelative(file.path)
+                cache[id] = Buffer.from(file.contents)
+              }
+              clients.forEach(client => client.reload())
+            } catch (e) {
+              console.error(e)
             }
-            clients.forEach(client => client.reload())
           }
         },
       }

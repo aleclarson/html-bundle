@@ -40,7 +40,6 @@ export function findRelativeScripts(
     const srcAttr = scriptNode.attrs.find(a => a.name === 'src')
     if (srcAttr?.value.startsWith('./')) {
       const srcPath = path.join(path.dirname(file), srcAttr.value)
-      console.log(yellow('⌁'), baseRelative(srcPath))
       const outPath = config.getBuildPath(srcPath)
       srcAttr.value = baseRelative(outPath)
       results.push({
@@ -55,11 +54,14 @@ export function findRelativeScripts(
   return results
 }
 
-export function buildRelativeScripts(
-  scripts: RelativeScript[],
+export function buildEntryScripts(
+  scripts: string[],
   config: Config,
   flags: { watch?: boolean; write?: boolean } = {}
 ) {
+  for (const srcPath of scripts) {
+    console.log(yellow('⌁'), baseRelative(srcPath))
+  }
   return esbuild.build({
     format: 'esm',
     charset: 'utf8',
@@ -69,7 +71,7 @@ export function buildRelativeScripts(
     ...config.esbuild,
     write: flags.write != false,
     bundle: true,
-    entryPoints: scripts.map(script => script.srcPath),
+    entryPoints: scripts,
     outdir: config.build,
     outbase: config.src,
     plugins: [

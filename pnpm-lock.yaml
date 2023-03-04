@@ -2,7 +2,7 @@ lockfileVersion: 5.4
 
 patchedDependencies:
   '@chialab/esbuild-plugin-meta-url@0.17.2':
-    hash: 4yu6gcteo5hmvzenkuzminzeqm
+    hash: 3o5t6kfprjpayczsn2odx3srei
     path: patches/@chialab__esbuild-plugin-meta-url@0.17.2.patch
 
 specifiers:
@@ -57,7 +57,7 @@ dependencies:
   critters: 0.0.16
   esbuild: 0.17.10
   esbuild-plugin-import-glob: /@alloc/esbuild-plugin-import-glob/0.1.6
-  esbuild-plugin-meta-url: /@chialab/esbuild-plugin-meta-url/0.17.2_4yu6gcteo5hmvzenkuzminzeqm
+  esbuild-plugin-meta-url: /@chialab/esbuild-plugin-meta-url/0.17.2_3o5t6kfprjpayczsn2odx3srei
   execa: 7.0.0
   exit-hook: 3.2.0
   glob: 8.1.0
@@ -324,7 +324,7 @@ packages:
       to-fast-properties: 2.0.0
     dev: false
 
-  /@chialab/esbuild-plugin-meta-url/0.17.2_4yu6gcteo5hmvzenkuzminzeqm:
+  /@chialab/esbuild-plugin-meta-url/0.17.2_3o5t6kfprjpayczsn2odx3srei:
     resolution: {integrity: sha512-BGlitlhRUzKzyhozpyvAvE00FmpRXKe9gPs2uFPc9T6PmAunIPCYg4fTk/hqK/GZa75N+XH/+L+mkOhZkx/TDA==}
     engines: {node: '>=13'}
     dependencies:

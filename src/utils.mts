@@ -4,10 +4,12 @@ import browserslistToEsbuild from 'browserslist-to-esbuild'
 import chokidar from 'chokidar'
 import { EventEmitter } from 'events'
 import { mkdir } from 'fs/promises'
+import glob from 'glob'
 import * as lightningCss from 'lightningcss'
 import * as net from 'net'
 import * as path from 'path'
 import { loadConfig } from 'unconfig'
+import { promisify } from 'util'
 import { Config, UserConfig } from '../config.mjs'
 import { Flags } from './bundle.mjs'
 import { Plugin } from './plugin.mjs'
@@ -26,18 +28,23 @@ export async function loadBundleConfig(flags: Flags) {
   const defaultPlugins: Plugin[] = []
   if (flags.watch) {
     defaultPlugins.push(
-      await unwrapDefault(import('./plugins/cssReload.mjs')),
-      await unwrapDefault(import('./plugins/liveScripts.mjs'))
+      await loadPlugin(import('./plugins/cssReload.mjs')),
+      await loadPlugin(import('./plugins/liveScripts.mjs'))
     )
   }
   if (flags.webext || userConfig.webext) {
-    defaultPlugins.push(await unwrapDefault(import('./plugins/webext.mjs')))
+    defaultPlugins.push(
+      await loadPlugin(import('./plugins/webext.mjs')) //
+    )
   }
+
+  const srcDir = userConfig.src ?? 'src'
+  const entries = await promisify(glob)(srcDir + '/**/*.html')
 
   const plugins = defaultPlugins.concat(userConfig.plugins || [])
   const browsers = userConfig.browsers ?? '>=0.25%, not dead'
-  const srcDir = userConfig.src ?? 'src'
   const config: Config = {
+    entries,
     browsers,
     build: 'build',
     assets: 'public',
@@ -123,8 +130,9 @@ export async function loadBundleConfig(flags: Flags) {
   return config
 }
 
-function unwrapDefault(m: Promise<any>) {
-  return m.then(m => (m.default ? m.default : Object.values(m)[0]))
+async function loadPlugin(plugin: Promise<any>) {
+  const module = await plugin
+  return module.default ? module.default : Object.values(module)[0]
 }
 
 export function createDir(file: string) {

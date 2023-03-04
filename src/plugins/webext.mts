@@ -2,21 +2,30 @@ import { createScript, findElement, insertBefore } from '@web/parse5-utils'
 import chromeRemote from 'chrome-remote-interface'
 import exitHook from 'exit-hook'
 import fs from 'fs'
-import { cyan, yellow } from 'kleur/colors'
+import { cyan, red, yellow } from 'kleur/colors'
 import path from 'path'
 import { cmd as webExtCmd } from 'web-ext'
 import { Config, WebExtension } from '../../config.mjs'
 import type { Flags } from '../bundle.mjs'
 import { Plugin } from '../plugin.mjs'
-import { findFreeTcpPort, resolveHome, toArray } from '../utils.mjs'
+import {
+  baseRelative,
+  findFreeTcpPort,
+  resolveHome,
+  toArray,
+} from '../utils.mjs'
 
 const polyfillPath = path.resolve(
   import.meta.url.replace(/^file:/, ''),
   '../../../node_modules/webextension-polyfill/dist/browser-polyfill.min.js'
 )
 
-export const webextPlugin: Plugin = (config, flags) => {
+export const webextPlugin: Plugin = async (config, flags) => {
   const webextConfig = config.webext!
+  const manifest = await loadManifest(webextConfig, config, flags)
+
+  const { scripts, ignoredFiles } = getManifestFiles(manifest, config, flags)
+  config.entries.push(...scripts)
 
   if (webextConfig.polyfill) {
     config.copy.push({
@@ -29,7 +38,13 @@ export const webextPlugin: Plugin = (config, flags) => {
     async buildEnd() {
       if (!flags.watch) {
         // Pack the web extension for distribution.
-        await enableWebExtension(webextConfig, config, flags)
+        await enableWebExtension(
+          webextConfig,
+          ignoredFiles,
+          manifest,
+          config,
+          flags
+        )
       }
     },
     document(root) {
@@ -42,12 +57,22 @@ export const webextPlugin: Plugin = (config, flags) => {
       }
     },
     hmr(clients) {
-      enableWebExtension(webextConfig, config, flags, clients)
+      enableWebExtension(
+        webextConfig,
+        ignoredFiles,
+        manifest,
+        config,
+        flags,
+        clients
+      ).catch(console.error)
+
       clients.on('connect', ({ client }) => {
         client
           .evaluate('[location.protocol, location.host]')
-          .then(([protocol, host]) => {
-            client.emit('webext:uuid', { protocol, host })
+          .then(([protocol, host] = []) => {
+            if (protocol) {
+              client.emit('webext:uuid', { protocol, host })
+            }
           })
       })
     },
@@ -74,13 +99,13 @@ function parseContentSecurityPolicy(str: string) {
   return result
 }
 
-async function enableWebExtension(
+async function loadManifest(
   webextConfig: WebExtension.Config,
   config: Config,
-  flags: Flags,
-  clients?: Plugin.ClientSet
+  flags: Flags
 ) {
   let isManifestChanged = false
+
   const rawManifest = fs.readFileSync('manifest.json', 'utf8')
   const manifest = JSON.parse(rawManifest)
 
@@ -109,20 +134,34 @@ async function enableWebExtension(
 
   if (webextConfig.polyfill) {
     const polyfillPath = path.join(config.build, 'browser-polyfill.min.js')
-    const injectPolyfillIfNeeded = (scripts: string[] | undefined) => {
+    const injectPolyfillIfNeeded = (
+      type: string,
+      scripts: string[] | undefined
+    ) => {
       if (!scripts) return
       const needsBrowserPolyfill = scripts.some(file => {
-        const code = fs.readFileSync(file, 'utf8')
-        return /\bbrowser\./.test(code)
+        try {
+          const code = fs.readFileSync(file, 'utf8')
+          return /\bbrowser\./.test(code)
+        } catch (e: any) {
+          if (e.code == 'ENOENT') {
+            console.warn(
+              red('error') + ' missing %s script:',
+              type,
+              baseRelative(file)
+            )
+          }
+          return false
+        }
       })
       if (needsBrowserPolyfill) {
         scripts.unshift(polyfillPath)
         isManifestChanged = true
       }
     }
-    injectPolyfillIfNeeded(manifest.background?.scripts)
+    injectPolyfillIfNeeded('background', manifest.background?.scripts)
     manifest.content_scripts?.forEach((script: { js?: string[] }) => {
-      injectPolyfillIfNeeded(script.js)
+      injectPolyfillIfNeeded('content', script.js)
     })
   }
 
@@ -141,35 +180,80 @@ async function enableWebExtension(
     })
   }
 
+  return manifest
+}
+
+function getManifestFiles(manifest: any, config: Config, flags: Flags) {
   const ignoredFiles = new Set(fs.readdirSync(process.cwd()))
-  const keepFile = (
-    file: string | undefined,
-    watch = !!file && !file.startsWith(config.build + '/')
-  ) => {
+  const files = new Set<string>()
+
+  const keepFile = (file: string | undefined, watch?: boolean) => {
     if (typeof file == 'string') {
       ignoredFiles.delete(file.split('/')[0])
+      files.add(file)
+
+      watch ??= flags.watch && !file.startsWith(config.build + '/')
       if (watch && fs.existsSync(file)) {
         config.watcher?.add(file)
       }
     }
   }
-  const keepFiles = (arg: any) =>
-    typeof arg == 'string'
-      ? keepFile(arg)
-      : Array.isArray(arg)
-      ? arg.forEach(keepFiles)
-      : arg && Object.values(arg).forEach(keepFiles)
+
+  const noSrcFiles: string[] = []
+  const keepFiles = (
+    arg: string | string[] | Record<string, string | string[]> | undefined,
+    key?: string | number
+  ): string[] => {
+    if (arg == null) {
+      return noSrcFiles
+    }
+    if (typeof arg == 'string') {
+      keepFile(arg)
+      return noSrcFiles
+    }
+    if (Array.isArray(arg)) {
+      return arg.filter((file, index) => {
+        keepFile(file)
+        if (file.startsWith(config.src + '/')) {
+          arg[index] = config.getBuildPath(file)
+          console.log('%s => %s', file, arg[index])
+          return true
+        }
+      })
+    }
+    return keepFiles(
+      typeof key == 'string' ? arg[key] : (Object.values(arg) as string[])
+    )
+  }
 
   keepFile('manifest.json')
   keepFile(config.build, false)
   keepFile(config.assets)
   keepFile(manifest.browser_action?.default_popup)
-  keepFiles(manifest.background?.scripts)
   keepFiles(manifest.browser_action?.default_icon)
   keepFiles(manifest.chrome_url_overrides)
-  keepFiles(manifest.content_scripts)
   keepFiles(manifest.icons)
 
+  const backgroundScripts = keepFiles(manifest.background?.scripts)
+  const contentScripts =
+    (manifest.content_scripts as any[] | undefined)
+      ?.map((script: { js?: string[] }) => keepFiles(script.js))
+      .flat() || []
+
+  return {
+    scripts: [...backgroundScripts, ...contentScripts].filter(Boolean),
+    ignoredFiles,
+  }
+}
+
+async function enableWebExtension(
+  webextConfig: WebExtension.Config,
+  ignoredFiles: Set<string>,
+  manifest: any,
+  config: Config,
+  flags: Flags,
+  clients?: Plugin.ClientSet
+) {
   const artifactsDir =
     webextConfig.artifactsDir || path.join(process.cwd(), 'web-ext-artifacts')
 
