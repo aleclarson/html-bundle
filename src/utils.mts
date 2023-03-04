@@ -11,7 +11,7 @@ import * as path from 'path'
 import { loadConfig } from 'unconfig'
 import { promisify } from 'util'
 import { Config, UserConfig } from '../config.mjs'
-import { Flags } from './bundle.mjs'
+import { Flags } from './cli.mjs'
 import { Plugin } from './plugin.mjs'
 
 const env = JSON.stringify

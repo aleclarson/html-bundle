@@ -6,7 +6,7 @@ import { cyan, red, yellow } from 'kleur/colors'
 import path from 'path'
 import { cmd as webExtCmd } from 'web-ext'
 import { Config, WebExtension } from '../../config.mjs'
-import type { Flags } from '../bundle.mjs'
+import type { Flags } from '../cli.mjs'
 import { Plugin } from '../plugin.mjs'
 import {
   baseRelative,

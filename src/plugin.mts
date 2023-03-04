@@ -5,7 +5,7 @@ import lightningCss from 'lightningcss'
 import { Promisable } from 'type-fest'
 import { UrlWithStringQuery } from 'url'
 import { Config, WebExtension } from '../config.mjs'
-import { Flags } from './bundle.mjs'
+import { Flags } from './cli.mjs'
 import { RelativeStyle } from './css.mjs'
 import { RelativeScript } from './esbuild.mjs'
 
