@@ -35,8 +35,12 @@ export const webextPlugin: Plugin = async (config, flags) => {
   if (webextConfig.polyfill) {
     config.copy.push({
       [polyfillPath]: 'browser-polyfill.min.js',
-      [polyfillPath + '.map']: 'browser-polyfill.min.js.map',
     })
+    if (flags.watch) {
+      config.copy.push({
+        [polyfillPath + '.map']: 'browser-polyfill.min.js.map',
+      })
+    }
   }
 
   return {
