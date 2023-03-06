@@ -274,6 +274,7 @@ function getManifestFiles(manifest: any, config: Config, flags: Flags) {
   keepFile('manifest.json')
   keepFile(config.build, false)
   keepFile(config.assets)
+  keepFile(manifest.background?.page)
   keepFile(manifest.browser_action?.default_popup)
   keepFiles(manifest.browser_action?.default_icon)
   keepFiles(manifest.web_accessible_resources)
