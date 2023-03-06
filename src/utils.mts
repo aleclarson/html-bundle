@@ -17,6 +17,7 @@ import { Plugin } from './plugin.mjs'
 const env = JSON.stringify
 
 export async function loadBundleConfig(flags: Flags) {
+  const nodeEnv = (process.env.NODE_ENV ||= 'development')
   const result = await loadConfig<UserConfig>({
     sources: [
       { files: 'bundle.config' },
@@ -65,8 +66,8 @@ export async function loadBundleConfig(flags: Flags) {
       ...userConfig.esbuild,
       target: userConfig.esbuild?.target ?? browserslistToEsbuild(browsers),
       define: {
-        'import.meta.env.DEV': env(flags.watch || false),
-        'process.env.NODE_ENV': env(process.env.NODE_ENV || 'development'),
+        'import.meta.env.DEV': env(nodeEnv == 'development'),
+        'process.env.NODE_ENV': env(nodeEnv),
         ...userConfig.esbuild?.define,
       },
     } as any,
