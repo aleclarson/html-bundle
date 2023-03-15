@@ -1,7 +1,8 @@
 import { ParentNode } from '@web/parse5-utils'
-import { EventEmitter } from 'events'
+import esbuild from 'esbuild'
 import http from 'http'
 import lightningCss from 'lightningcss'
+import { Emitter } from 'mitt'
 import { Promisable } from 'type-fest'
 import { UrlWithStringQuery } from 'url'
 import { Config, WebExtension } from '../config.mjs'
@@ -33,6 +34,11 @@ export interface PluginInstance {
       styles: RelativeStyle[]
     }
   ): void
+  /**
+   * Called after esbuild has finished bundling the entry scripts found
+   * within all of your HTML files.
+   */
+  bundles?(bundle: Record<string, Plugin.Bundle>): void
 }
 
 export namespace Plugin {
@@ -56,11 +62,20 @@ export namespace Plugin {
     on(type: string, handler: (event: ClientEvent) => void): void
   }
 
-  export interface Client extends EventEmitter {
+  export interface Client extends Emitter<ClientEvents> {
     evaluate: <T = any>(expr: string) => Promise<T>
     evaluateModule: <T = any>(file: string, args: any[]) => Promise<T>
     getURL: () => Promise<string>
     reload: () => void
+  }
+
+  /**
+   * Plugins can extend this via "interface declaration merging" with
+   * `declare module` syntax, so they can emit custom events on HMR
+   * clients.
+   */
+  export interface ClientEvents extends Record<string | symbol, unknown> {
+    'webext:uuid': { protocol: string; host: string }
   }
 
   export interface ClientEvent extends Record<string, any> {
@@ -78,6 +93,16 @@ export namespace Plugin {
   export type VirtualFile =
     | ((request: Plugin.Request) => Promisable<VirtualFileData | null>)
     | Promisable<VirtualFileData | null>
+
+  export interface Bundle extends esbuild.Metafile {
+    id: string
+    entries: Set<string>
+    /**
+     * Set this to false in the `bundles` plugin hook if you want to
+     * force full reloads when an input file in this bundle is changed.
+     */
+    hmr?: boolean
+  }
 }
 
 export interface ServePlugin {

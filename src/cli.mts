@@ -2,10 +2,10 @@
 
 import { ParentNode } from '@web/parse5-utils'
 import cac from 'cac'
-import { EventEmitter } from 'events'
 import * as fs from 'fs'
 import { cyan, red, yellow } from 'kleur/colors'
 import md5Hex from 'md5-hex'
+import mitt, { Emitter } from 'mitt'
 import * as mime from 'mrmime'
 import * as path from 'path'
 import { performance } from 'perf_hooks'
@@ -13,17 +13,23 @@ import { debounce } from 'ts-debounce'
 import { parse as parseURL } from 'url'
 import * as uuid from 'uuid'
 import * as ws from 'ws'
-import { Config, WebExtension } from '../config.mjs'
+import { Config, Entry, WebExtension } from '../config.mjs'
+import { buildClientConnection } from './clientUtils.mjs'
 import { copyFiles } from './copy.mjs'
 import {
   buildEntryScripts,
-  compileClientModule,
+  compileSeparateEntry,
   findRelativeScripts,
   RelativeScript,
 } from './esbuild.mjs'
 import { buildHTML, parseHTML } from './html.mjs'
 import { HmrPlugin, Plugin, ServePlugin } from './plugin.mjs'
-import { findFreeTcpPort, loadBundleConfig, lowercaseKeys } from './utils.mjs'
+import {
+  baseRelative,
+  createDir,
+  loadBundleConfig,
+  lowercaseKeys,
+} from './utils.mjs'
 
 const cli = cac('html-bundle')
 
@@ -59,34 +65,46 @@ async function bundle(config: Config, flags: Flags) {
     server = await installHttpServer(config, servePlugins)
   }
 
-  // At this point, the dev server URL and port are known.
-  config.esbuild.define['import.meta.env.DEV_URL'] = JSON.stringify(
-    config.server.url
-  )
-  config.esbuild.define['import.meta.env.HMR_PORT'] = JSON.stringify(
-    config.server.port
-  )
-
   type HTMLEntry = {
     document: ParentNode
     scripts: RelativeScript[]
   }
 
-  const build = async (entries: string[]) => {
-    const htmlEntries = new Map<string, HTMLEntry>()
-    const entryScripts = new Set<string>()
+  type ScriptBundle = {
+    hmr?: boolean
+    entries: Set<string>
+  }
 
-    for (const entry of entries) {
-      if (entry.endsWith('.html')) {
-        const html = fs.readFileSync(entry, 'utf8')
+  const build = async () => {
+    const htmlEntries = new Map<Entry, HTMLEntry>()
+    const scriptBundles = new Map<string, ScriptBundle>()
+
+    const seen = new Set<string>()
+    for (const entry of config.entries) {
+      const { file, bundleId = 'default' } = entry
+
+      const key = `${file}:${bundleId}`
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      const scriptBundle = scriptBundles.get(bundleId) || { entries: new Set() }
+      scriptBundles.set(bundleId, scriptBundle)
+      if (entry.hmr == false) {
+        scriptBundle.hmr = false
+      }
+
+      if (file.endsWith('.html')) {
+        const html = fs.readFileSync(file, 'utf8')
         const document = parseHTML(html)
-        const scripts = findRelativeScripts(document, entry, config)
+        const scripts = findRelativeScripts(document, file, config)
         htmlEntries.set(entry, { document, scripts })
         for (const script of scripts) {
-          entryScripts.add(script.srcPath)
+          scriptBundle.entries.add(script.srcPath)
         }
-      } else if (/\.[mc]?[tj]sx?$/.test(entry)) {
-        entryScripts.add(entry)
+      } else if (/\.[mc]?[tj]sx?$/.test(file)) {
+        scriptBundle.entries.add(path.resolve(file))
+      } else {
+        console.warn(red('⚠'), 'unsupported entry type:', file)
       }
     }
 
@@ -94,7 +112,36 @@ async function bundle(config: Config, flags: Flags) {
       ...Array.from(htmlEntries, ([entry, { document, scripts }]) =>
         buildHTML(entry, document, scripts, config, flags)
       ),
-      buildEntryScripts([...entryScripts], config, flags),
+      Promise.all(
+        Array.from(scriptBundles, async ([bundleId, { hmr, entries }]) => {
+          const { metafile } = await buildEntryScripts(
+            [...entries],
+            config,
+            flags
+          )
+          const bundle: Plugin.Bundle = {
+            id: bundleId,
+            hmr,
+            entries,
+            ...metafile,
+          }
+          return [bundleId, bundle] as const
+        })
+      )
+        .then(Object.fromEntries<Plugin.Bundle>)
+        .then(bundles => {
+          for (const plugin of config.plugins) {
+            plugin.bundles?.(bundles)
+          }
+        }),
+      ...config.scripts.map(async entry => {
+        console.log(yellow('⌁'), baseRelative(entry))
+        return compileSeparateEntry(entry, config).then(async code => {
+          const outFile = config.getBuildPath(entry)
+          await createDir(outFile)
+          fs.writeFileSync(outFile, code)
+        })
+      }),
     ])
 
     if (config.copy) {
@@ -102,16 +149,16 @@ async function bundle(config: Config, flags: Flags) {
     }
   }
 
-  const entries = Array.from(
-    new Set(config.entries.map(file => path.resolve(file)))
-  )
-
   const timer = performance.now()
-  await build(entries)
+  await build()
   console.log(
     cyan('build complete in %sms'),
     (performance.now() - timer).toFixed(2)
   )
+
+  if (flags.watch) {
+    await buildClientConnection(config)
+  }
 
   for (const plugin of config.plugins) {
     if (!plugin.buildEnd) continue
@@ -180,7 +227,7 @@ async function bundle(config: Config, flags: Flags) {
       if (needRebuild) {
         config.events.emit('will-rebuild')
         const timer = performance.now()
-        await build(entries)
+        await build()
         config.events.emit('rebuild')
 
         for (const plugin of config.plugins) {
@@ -276,15 +323,12 @@ async function installHttpServer(config: Config, servePlugins: ServePlugin[]) {
     response.end()
   })
 
-  const protocol = config.server.https ? 'https' : 'http'
-  const port =
-    config.server.port == 0
-      ? (config.server.port = await findFreeTcpPort())
-      : config.server.port
-
-  config.server.url = new URL(`${protocol}://localhost:${port}`)
-  server.listen(port, () => {
-    console.log(cyan('%s server listening on port %s'), protocol, port)
+  server.listen(config.server.port, () => {
+    console.log(
+      cyan('%s server listening on port %s'),
+      config.server.url.protocol.slice(0, -1),
+      config.server.port
+    )
   })
 
   return server
@@ -296,12 +340,12 @@ async function installWebSocketServer(
   hmrPlugins: HmrPlugin[],
   hmrInstances: Plugin.HmrInstance[]
 ) {
-  const events = new EventEmitter()
+  const events = mitt()
   const clients = new Set<Plugin.Client>()
   const requests: Record<string, Function> = {}
 
   const context: Plugin.ClientSet = clients as any
-  context.on = events.on.bind(events)
+  context.on = events.on.bind(events) as any
 
   hmrPlugins.forEach(plugin => {
     const instance = plugin.hmr(context)
@@ -328,10 +372,13 @@ async function installWebSocketServer(
   const compiledModules = new Map<string, Plugin.VirtualFileData>()
   const runningModules = new Map<string, number>()
 
-  class Client extends EventEmitter {
+  class Client {
     readonly pendingRequests = new Set<string>()
     constructor(readonly socket: ws.WebSocket) {
-      super()
+      return Object.assign(
+        Object.setPrototypeOf(mitt(), Client.prototype),
+        this
+      )
     }
     evaluate(expr: string) {
       const path = `/${md5Hex(expr)}.js`
@@ -348,7 +395,7 @@ async function installWebSocketServer(
       if (config.virtualFiles[path] == null) {
         let compiled = compiledModules.get(moduleUrl.href)
         if (compiled?.mtime != mtime) {
-          const data = await compileClientModule(file, config, 'esm')
+          const data = await compileSeparateEntry(file, config, 'esm')
           compiledModules.set(
             moduleUrl.href,
             (compiled = {
@@ -382,9 +429,14 @@ async function installWebSocketServer(
     }
   }
 
+  interface Client extends Emitter<Plugin.ClientEvents> {}
+
   const wss = new ws.WebSocketServer({ server })
   wss.on('connection', socket => {
     const client = new Client(socket)
+    client.on('*', (type, event) => {
+      events.emit(type as any, event)
+    })
     clients.add(client)
     socket.on('close', () => {
       for (const id of client.pendingRequests) {

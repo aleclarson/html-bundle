@@ -61,6 +61,7 @@
     "lightningcss": "^1.19.0",
     "md5-hex": "^4.0.0",
     "mini-svg-data-uri": "^1.4.4",
+    "mitt": "^3.0.0",
     "mrmime": "^1.0.1",
     "parse5": "^6.0.1",
     "ts-debounce": "^4.0.0",

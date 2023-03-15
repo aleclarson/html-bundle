@@ -28,6 +28,10 @@ export type UserConfig = {
    */
   copy?: (string | Record<string, string>)[]
   /**
+   * Globs to use as entry points for dynamically inserted `<script>` tags.
+   */
+  scripts?: string[]
+  /**
    * Compile JS/CSS syntax to be compatible with the browsers that match
    * the given Browserslist query.
    */
@@ -90,14 +94,12 @@ export namespace WebExtension {
 
 export type Config = Merge<
   Required<UserConfig>,
-  {
-    entries: string[]
+  ConfigAPI & {
+    mode: string
+    entries: Entry[]
     plugins: PluginInstance[]
     events: EventEmitter
     virtualFiles: Record<string, Plugin.VirtualFile>
-    getBuildPath(file: string): string
-    resolve(id: string, importer?: string | URL): URL
-    resolveDevUrl(id: string, importer?: string | URL): URL
     esbuild: esbuild.BuildOptions & {
       define: Record<string, string>
     }
@@ -110,3 +112,23 @@ export type Config = Merge<
     webext?: WebExtension.Config
   }
 >
+
+export interface ConfigAPI {
+  getBuildPath(file: string): string
+  resolve(id: string, importer?: string | URL): URL
+  resolveDevUrl(id: string, importer?: string | URL): URL
+}
+
+export type Entry = {
+  file: string
+  /**
+   * If a plugin sets this, this file will be bundled separately from
+   * the default bundle. This applies to JS only, but an HTML entry with
+   * this property will apply it to all of its scripts.
+   */
+  bundleId?: string
+  /**
+   * Set to false to disable HMR for the bundle this entry is part of.
+   */
+  hmr?: boolean
+}

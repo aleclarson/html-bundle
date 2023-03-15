@@ -7,18 +7,22 @@ import * as path from 'path'
 import { Config } from '../config.mjs'
 import { baseRelative, findExternalScripts } from './utils.mjs'
 
-export async function compileClientModule(
+export async function compileSeparateEntry(
   file: string,
   config: Config,
   format?: esbuild.Format
 ) {
-  const filePath = new URL(file, import.meta.url).pathname
+  const filePath = decodeURIComponent(new URL(file, import.meta.url).pathname)
+
   const result = await esbuild.build({
     ...config.esbuild,
+    bundle: true,
     write: false,
     format: format ?? 'iife',
     entryPoints: [filePath],
+    sourcemap: config.mode == 'development' ? 'inline' : false,
   })
+
   return result.outputFiles[0].text
 }
 
@@ -65,15 +69,17 @@ export function buildEntryScripts(
   return esbuild.build({
     format: 'esm',
     charset: 'utf8',
-    splitting: true,
     sourcemap: flags.watch,
     minify: !flags.watch && flags.minify != false,
     ...config.esbuild,
+    entryPoints: scripts,
+    outbase: config.src,
+    outdir: config.build,
+    metafile: true,
     write: flags.write != false,
     bundle: true,
-    entryPoints: scripts,
-    outdir: config.build,
-    outbase: config.src,
+    splitting: true,
+    treeShaking: true,
     plugins: [
       metaUrlPlugin(),
       importGlobPlugin(),

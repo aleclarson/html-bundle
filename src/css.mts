@@ -9,7 +9,7 @@ import { baseRelative, createDir } from './utils.mjs'
 export async function buildCSSFile(
   file: string,
   config: Config,
-  flags: { watch?: boolean; minify?: boolean } = { watch: true }
+  flags: { watch?: boolean; minify?: boolean } = {}
 ) {
   const importer = new URL('file://' + path.resolve(file))
   const visitors = config.plugins
@@ -27,8 +27,10 @@ export async function buildCSSFile(
 
   console.log(yellow('⌁'), baseRelative(file))
   const bundle = await lightningCss.bundleAsync({
-    minify: !flags.watch && flags.minify != false,
-    sourceMap: flags.watch,
+    minify:
+      flags.minify == true ||
+      (flags.minify == null && config.mode != 'development'),
+    sourceMap: config.mode == 'development',
     errorRecovery: true,
     visitor: visitors.length
       ? lightningCss.composeVisitors(visitors)

@@ -10,7 +10,7 @@ import * as net from 'net'
 import * as path from 'path'
 import { loadConfig } from 'unconfig'
 import { promisify } from 'util'
-import { Config, UserConfig } from '../config.mjs'
+import { Config, ConfigAPI, ServerConfig, UserConfig } from '../config.mjs'
 import { Flags } from './cli.mjs'
 import { Plugin } from './plugin.mjs'
 
@@ -26,7 +26,9 @@ export async function loadBundleConfig(flags: Flags) {
   })
 
   const userConfig = result.config as UserConfig
-  const defaultPlugins: Plugin[] = []
+  const defaultPlugins: Plugin[] = [
+    await loadPlugin(import('./plugins/cssCodeSplit.mjs')),
+  ]
   if (flags.watch) {
     defaultPlugins.push(
       await loadPlugin(import('./plugins/cssReload.mjs')),
@@ -40,56 +42,23 @@ export async function loadBundleConfig(flags: Flags) {
   }
 
   const srcDir = userConfig.src ?? 'src'
-  const entries = await promisify(glob)(srcDir + '/**/*.html')
+  const entries = (await promisify(glob)(srcDir + '/**/*.html')).map(file => ({
+    file,
+  }))
+
+  let scripts: string[] | undefined
+  if (userConfig.scripts) {
+    const matches = await Promise.all(
+      userConfig.scripts.map(p => promisify(glob)(p))
+    )
+    scripts = Array.from(new Set(matches.flat()), p => path.resolve(p))
+  }
 
   const plugins = defaultPlugins.concat(userConfig.plugins || [])
   const browsers = userConfig.browsers ?? '>=0.25%, not dead'
-  const config: Config = {
-    entries,
-    browsers,
-    build: 'build',
-    assets: 'public',
-    deletePrev: true,
-    isCritical: false,
-    ...userConfig,
-    src: srcDir,
-    plugins: [],
-    events: new EventEmitter(),
-    virtualFiles: {},
-    watcher: flags.watch
-      ? chokidar.watch(srcDir, { ignoreInitial: true })
-      : undefined,
-    copy: userConfig.copy ?? [],
-    webext: userConfig.webext == true ? {} : userConfig.webext || undefined,
-    htmlMinifierTerser: userConfig.htmlMinifierTerser ?? {},
-    esbuild: {
-      ...userConfig.esbuild,
-      target: userConfig.esbuild?.target ?? browserslistToEsbuild(browsers),
-      define: {
-        'import.meta.env.DEV': env(nodeEnv == 'development'),
-        'process.env.NODE_ENV': env(nodeEnv),
-        ...userConfig.esbuild?.define,
-      },
-    } as any,
-    lightningCss: {
-      ...userConfig.lightningCss,
-      targets:
-        userConfig.lightningCss?.targets ??
-        lightningCss.browserslistToTargets(browserslist(browsers)),
-      drafts: {
-        nesting: true,
-        ...userConfig.lightningCss?.drafts,
-      },
-    },
-    server: {
-      url: null!,
-      port: 0,
-      ...userConfig.server,
-      https:
-        userConfig.server?.https != true
-          ? userConfig.server?.https || undefined
-          : {},
-    },
+  const server = await loadServerConfig(userConfig.server || {})
+
+  const api: ConfigAPI = {
     getBuildPath(file) {
       const wasAbsolute = path.isAbsolute(file)
       if (wasAbsolute) {
@@ -123,12 +92,76 @@ export async function loadBundleConfig(flags: Flags) {
       return new URL(id, importer)
     },
   }
+
+  const config: Config = {
+    build: 'build',
+    assets: 'public',
+    deletePrev: false,
+    isCritical: false,
+    ...userConfig,
+    mode: nodeEnv,
+    src: srcDir,
+    entries,
+    plugins: [],
+    events: new EventEmitter(),
+    virtualFiles: {},
+    browsers,
+    watcher: flags.watch
+      ? chokidar.watch(srcDir, { ignoreInitial: true })
+      : undefined,
+    copy: userConfig.copy ?? [],
+    scripts: scripts || [],
+    webext: userConfig.webext == true ? {} : userConfig.webext || undefined,
+    htmlMinifierTerser: userConfig.htmlMinifierTerser ?? {},
+    esbuild: {
+      ...userConfig.esbuild,
+      target: userConfig.esbuild?.target ?? browserslistToEsbuild(browsers),
+      define: {
+        ...userConfig.esbuild?.define,
+        'process.env.NODE_ENV': env(nodeEnv),
+        'import.meta.env.DEV': env(nodeEnv == 'development'),
+        'import.meta.env.DEV_URL': env(server.url),
+        'import.meta.env.HMR_PORT': env(server.port),
+      },
+    } as any,
+    lightningCss: {
+      ...userConfig.lightningCss,
+      targets:
+        userConfig.lightningCss?.targets ??
+        lightningCss.browserslistToTargets(browserslist(browsers)),
+      drafts: {
+        nesting: true,
+        ...userConfig.lightningCss?.drafts,
+      },
+    },
+    server: flags.watch ? server : ({} as any),
+    ...api,
+  }
+
   await Promise.all(
     plugins.map(async setup => {
       config.plugins.push(await setup(config, flags))
     })
   )
+
   return config
+}
+
+async function loadServerConfig(config: ServerConfig) {
+  const https = config.https != true ? config.https || undefined : {}
+  const protocol = https ? 'https' : 'http'
+
+  let port = config.port || 0
+  if (port == 0) {
+    port = await findFreeTcpPort()
+  }
+
+  return {
+    ...config,
+    https,
+    port,
+    url: new URL(`${protocol}://localhost:${port}`),
+  }
 }
 
 async function loadPlugin(plugin: Promise<any>) {

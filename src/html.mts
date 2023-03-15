@@ -1,7 +1,6 @@
 import {
   appendChild,
   createElement,
-  createScript,
   findElement,
   ParentNode,
 } from '@web/parse5-utils'
@@ -10,11 +9,11 @@ import { writeFile } from 'fs/promises'
 import { minify } from 'html-minifier-terser'
 import { yellow } from 'kleur/colors'
 import { parse, parseFragment, serialize } from 'parse5'
-import * as path from 'path'
-import { Config } from '../config.mjs'
+import { Config, Entry } from '../config.mjs'
+import { injectClientConnection } from './clientUtils.mjs'
 import { buildRelativeStyles, findRelativeStyles } from './css.mjs'
-import { compileClientModule, RelativeScript } from './esbuild.mjs'
-import { baseRelative, createDir, relative } from './utils.mjs'
+import { RelativeScript } from './esbuild.mjs'
+import { baseRelative, createDir } from './utils.mjs'
 
 export function parseHTML(html: string) {
   const document = (
@@ -38,16 +37,16 @@ export function parseHTML(html: string) {
 let critters: Critters
 
 export async function buildHTML(
-  file: string,
+  entry: Entry,
   document: ParentNode,
   scripts: RelativeScript[],
   config: Config,
   flags: { watch?: boolean; critical?: boolean }
 ) {
-  console.log(yellow('⌁'), baseRelative(file))
+  console.log(yellow('⌁'), baseRelative(entry.file))
 
-  const outFile = config.getBuildPath(file)
-  const styles = findRelativeStyles(document, file)
+  const outFile = config.getBuildPath(entry.file)
+  const styles = findRelativeStyles(document, entry.file)
   try {
     await buildRelativeStyles(styles, config, flags)
   } catch (e) {
@@ -57,21 +56,11 @@ export async function buildHTML(
 
   const meta = { scripts, styles }
   for (const plugin of config.plugins) {
-    plugin.document?.(document, file, meta)
+    plugin.document?.(document, entry.file, meta)
   }
 
-  if (flags.watch) {
-    const clientConnector = await compileClientModule(
-      './client/connection.js',
-      config
-    )
-    const clientConnectorPath = path.resolve(config.build, '_connection.mjs')
-    await writeFile(clientConnectorPath, clientConnector)
-    const hmrScript = createScript({
-      src: relative(outFile, clientConnectorPath),
-    })
-    const head = findElement(document, e => e.tagName === 'head')!
-    appendChild(head, hmrScript)
+  if (flags.watch && entry.hmr != false) {
+    injectClientConnection(document, outFile, config)
   }
 
   let html = serialize(document)

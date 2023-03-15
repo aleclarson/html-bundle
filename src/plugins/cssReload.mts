@@ -6,7 +6,7 @@ import { buildCSSFile } from '../css.mjs'
 import { CssPlugin, Plugin } from '../plugin.mjs'
 import { baseRelative } from '../utils.mjs'
 
-export const cssReloadPlugin: Plugin = config => {
+export const cssReloadPlugin: Plugin = (config, flags) => {
   const cssEntries = new Map<string, string>()
   const updateCssEntry = (file: string, code: string) => {
     const prevHash = cssEntries.get(file)
@@ -38,9 +38,11 @@ export const cssReloadPlugin: Plugin = config => {
           await Promise.all(
             Array.from(cssEntries.keys(), async (file, i) => {
               if (fs.existsSync(file)) {
-                const { outFile, code } = await buildCSSFile(file, config, {
-                  watch: true,
-                })
+                const { outFile, code } = await buildCSSFile(
+                  file,
+                  config,
+                  flags
+                )
                 const cssText = code.toString('utf8')
                 if (updateCssEntry(file, cssText)) {
                   const uri = baseRelative(outFile)

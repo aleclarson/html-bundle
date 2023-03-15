@@ -5,7 +5,7 @@ import fs from 'fs'
 import { cyan, red, yellow } from 'kleur/colors'
 import path from 'path'
 import { cmd as webExtCmd } from 'web-ext'
-import { Config, WebExtension } from '../../config.mjs'
+import { Config, Entry, WebExtension } from '../../config.mjs'
 import type { Flags } from '../cli.mjs'
 import { Plugin } from '../plugin.mjs'
 import {
@@ -15,30 +15,37 @@ import {
   toArray,
 } from '../utils.mjs'
 
-const polyfillPath = path.resolve(
-  import.meta.url.replace(/^file:/, ''),
-  '../../../node_modules/webextension-polyfill/dist/browser-polyfill.min.js'
-)
-
 export const webextPlugin: Plugin = async (config, flags) => {
   const webextConfig = config.webext!
-  const { manifest, scripts, ignoredFiles } = await loadManifest(
-    webextConfig,
-    config,
-    flags
-  )
+
+  const { manifest, scripts, ignoredFiles, backgroundPage } =
+    await loadManifest(webextConfig, config, flags)
+
+  const backgroundEntry = (backgroundPage &&
+    config.entries.find(e => e.file == backgroundPage)) as Entry | undefined
+  if (backgroundEntry) {
+    backgroundEntry.bundleId = backgroundPage
+    backgroundEntry.hmr = false
+  }
 
   // Add the web extension scripts to the build.
-  config.entries.push(...scripts)
+  config.entries.push(...scripts.map(file => ({ file })))
 
   // Copy the webextension-polyfill to the build if needed.
   if (webextConfig.polyfill) {
+    const polyfillPath = path.resolve(
+      import.meta.url.replace(/^file:/, ''),
+      '../../../node_modules/webextension-polyfill/dist/browser-polyfill' +
+        (config.mode == 'development' || flags.minify == false
+          ? '.js'
+          : '.min.js')
+    )
     config.copy.push({
-      [polyfillPath]: 'browser-polyfill.min.js',
+      [polyfillPath]: 'browser-polyfill.js',
     })
-    if (flags.watch) {
+    if (config.mode == 'development') {
       config.copy.push({
-        [polyfillPath + '.map']: 'browser-polyfill.min.js.map',
+        [polyfillPath + '.map']: 'browser-polyfill.js.map',
       })
     }
   }
@@ -60,7 +67,7 @@ export const webextPlugin: Plugin = async (config, flags) => {
       if (webextConfig.polyfill) {
         const head = findElement(root, e => e.tagName == 'head')!
         const polyfillScript = createScript({
-          src: path.join('/', config.build, 'browser-polyfill.min.js'),
+          src: path.join('/', config.build, 'browser-polyfill.js'),
         })
         insertBefore(head, polyfillScript, head.childNodes[0])
       }
@@ -142,7 +149,7 @@ async function loadManifest(
   }
 
   if (webextConfig.polyfill) {
-    const polyfillPath = path.join(config.build, 'browser-polyfill.min.js')
+    const polyfillPath = path.join(config.build, 'browser-polyfill.js')
     const injectPolyfillIfNeeded = (
       type: string,
       scripts: string[] | undefined
@@ -180,6 +187,7 @@ async function loadManifest(
       (await plugin.webext(manifest, webextConfig)) || isManifestChanged
   }
 
+  const backgroundPage = manifest.background?.page as string | undefined
   const { scripts, ignoredFiles } = getManifestFiles(manifest, config, flags)
 
   if (isManifestChanged) {
@@ -195,6 +203,7 @@ async function loadManifest(
     manifest,
     scripts,
     ignoredFiles,
+    backgroundPage,
   }
 }
 
@@ -266,17 +275,26 @@ function getManifestFiles(manifest: any, config: Config, flags: Flags) {
         }
       })
     }
-    return keepFiles(
-      typeof key == 'string' ? arg[key] : (Object.values(arg) as string[])
-    )
+    if (typeof key == 'string') {
+      const file = arg[key] as string
+      if (file.startsWith(config.src + '/')) {
+        arg[key] = config.getBuildPath(file)
+      }
+      keepFile(file)
+      return noSrcFiles
+    }
+    for (const key of Object.keys(arg)) {
+      keepFiles(arg, key)
+    }
+    return noSrcFiles
   }
 
   keepFile('manifest.json')
   keepFile(config.build, false)
   keepFile(config.assets)
-  keepFile(manifest.background?.page)
-  keepFile(manifest.browser_action?.default_popup)
+  keepFiles(manifest.browser_action, 'default_popup')
   keepFiles(manifest.browser_action?.default_icon)
+  keepFiles(manifest.background, 'page')
   keepFiles(manifest.web_accessible_resources)
   keepFiles(manifest.chrome_url_overrides)
   keepFiles(manifest.icons)
@@ -388,6 +406,8 @@ async function enableWebExtension(
   }
 }
 
+const aboutDebuggingRE = /^about:debugging(#|$)/
+
 async function refreshOnRebuild(
   target: WebExtension.RunTarget,
   runner: import('web-ext').MultiExtensionRunner,
@@ -424,7 +444,11 @@ async function refreshOnRebuild(
       resolvedTabs = resolveFirefoxTabs(tabs, manifest, runner)
     } else {
       resolvedTabs = tabs.map(url =>
-        url == 'about:newtab' ? 'chrome://newtab/' : url
+        url == 'about:newtab'
+          ? 'chrome://newtab/'
+          : aboutDebuggingRE.test(url)
+          ? 'chrome://extensions/'
+          : url
       )
     }
     await openTabs(port, resolvedTabs, manifest, isChromium)
@@ -433,7 +457,7 @@ async function refreshOnRebuild(
   let uuid: string
   clients.on('webext:uuid', event => {
     if (event.protocol == extProtocol) {
-      uuid = event.id
+      uuid = event.host
     }
   })
 
@@ -485,7 +509,13 @@ async function refreshOnRebuild(
 
     const currentTabs = await chromeRemote.List({ port })
     const missingTabs = tabs
-      .map(url => (newTabPage && url == 'about:newtab' ? newTabUrl : url))
+      .map(url =>
+        newTabPage && url == 'about:newtab'
+          ? newTabUrl
+          : isChromium && aboutDebuggingRE.test(url)
+          ? 'chrome://extensions/'
+          : url
+      )
       .filter(url => {
         const matchingTab = currentTabs.find(tab => tab.url == url)
         return !matchingTab || url == newTabUrl
@@ -568,6 +598,8 @@ async function openTabs(
       let target: chromeRemote.Client
       let targetId: string
       let needsNavigate = false
+
+      console.log('Opening tab...', url)
 
       if (i == 0 && firstTab) {
         targetId = firstTab.id

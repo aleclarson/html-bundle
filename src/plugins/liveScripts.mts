@@ -5,6 +5,7 @@ import { baseRelative } from '../utils.mjs'
 export const liveScriptsPlugin: Plugin = config => {
   const cache: Record<string, Buffer> = {}
   const documents: Record<string, RelativeScript[]> = {}
+  let latestBundles: Plugin.Bundle[]
 
   return {
     document(_root, file, { scripts }) {
@@ -19,13 +20,24 @@ export const liveScriptsPlugin: Plugin = config => {
         ).href
       }
     },
+    bundles(bundles) {
+      latestBundles = Object.values(bundles)
+    },
     hmr(clients) {
       return {
-        // FIXME: We should only accept files that we know are used in
-        // bundled entry scripts with the type="module" attribute, as
-        // those are the only scripts we can update without reloading
-        // the extension.
-        accept: file => /\.m?[tj]sx?$/.test(file),
+        accept: file => {
+          let accept = false
+          for (const bundle of latestBundles) {
+            if (bundle.hmr == false) {
+              if (file in bundle.inputs) {
+                return false
+              }
+            } else if (!accept && file in bundle.inputs) {
+              accept = true
+            }
+          }
+          return accept
+        },
         async update() {
           for (const scripts of Object.values(documents)) {
             try {
