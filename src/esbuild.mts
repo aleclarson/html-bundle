@@ -1,10 +1,11 @@
 import { Attribute, Element, getAttribute, ParentNode } from '@web/parse5-utils'
 import * as esbuild from 'esbuild'
-import importGlobPlugin from 'esbuild-plugin-import-glob'
-import metaUrlPlugin from 'esbuild-plugin-meta-url'
+import { wrapPlugins } from 'esbuild-extra'
 import { yellow } from 'kleur/colors'
 import * as path from 'path'
 import { Config } from '../config.mjs'
+import importGlobPlugin from './plugins/importGlob/index.mjs'
+import metaUrlPlugin from './plugins/importMetaUrl.mjs'
 import { baseRelative, findExternalScripts } from './utils.mjs'
 
 export async function compileSeparateEntry(
@@ -14,14 +15,16 @@ export async function compileSeparateEntry(
 ) {
   const filePath = decodeURIComponent(new URL(file, import.meta.url).pathname)
 
-  const result = await esbuild.build({
-    ...config.esbuild,
-    bundle: true,
-    write: false,
-    format: format ?? 'iife',
-    entryPoints: [filePath],
-    sourcemap: config.mode == 'development' ? 'inline' : false,
-  })
+  const result = await esbuild.build(
+    wrapPlugins({
+      ...config.esbuild,
+      bundle: true,
+      write: false,
+      format: format ?? 'iife',
+      entryPoints: [filePath],
+      sourcemap: config.mode == 'development' ? 'inline' : false,
+    })
+  )
 
   return result.outputFiles[0].text
 }
@@ -66,24 +69,26 @@ export function buildEntryScripts(
   for (const srcPath of scripts) {
     console.log(yellow('⌁'), baseRelative(srcPath))
   }
-  return esbuild.build({
-    format: 'esm',
-    charset: 'utf8',
-    sourcemap: flags.watch,
-    minify: !flags.watch && flags.minify != false,
-    ...config.esbuild,
-    entryPoints: scripts,
-    outbase: config.src,
-    outdir: config.build,
-    metafile: true,
-    write: flags.write != false,
-    bundle: true,
-    splitting: true,
-    treeShaking: true,
-    plugins: [
-      metaUrlPlugin(),
-      importGlobPlugin(),
-      ...(config.esbuild.plugins || []),
-    ],
-  })
+  return esbuild.build(
+    wrapPlugins({
+      format: 'esm',
+      charset: 'utf8',
+      sourcemap: flags.watch,
+      minify: !flags.watch && flags.minify != false,
+      ...config.esbuild,
+      entryPoints: scripts,
+      outbase: config.src,
+      outdir: config.build,
+      metafile: true,
+      write: flags.write != false,
+      bundle: true,
+      splitting: true,
+      treeShaking: true,
+      plugins: [
+        ...(config.esbuild.plugins || []),
+        metaUrlPlugin(),
+        importGlobPlugin(),
+      ],
+    })
+  )
 }

@@ -31,7 +31,9 @@
   "devDependencies": {
     "@alloc/fast-rimraf": "^1.0.8",
     "@alloc/prettier-config": "^1.0.0",
+    "@types/babel__core": "^7.20.0",
     "@types/chrome-remote-interface": "^0.31.9",
+    "@types/convert-source-map": "^2.0.0",
     "@types/etag": "^1.8.1",
     "@types/glob": "^8.0.0",
     "@types/html-minifier-terser": "^7.0.0",
@@ -42,6 +44,10 @@
     "typescript": "^4.9.4"
   },
   "dependencies": {
+    "@ampproject/remapping": "^2.2.0",
+    "@babel/core": "^7.21.3",
+    "@chialab/estransform": "^0.17.3",
+    "@chialab/node-resolve": "^0.17.0",
     "@types/firefox-webext-browser": "^109.0.0",
     "@web/parse5-utils": "^1.3.0",
     "browserslist": "^4.21.5",
@@ -49,12 +55,13 @@
     "cac": "^6.7.14",
     "chokidar": "^3.5.3",
     "chrome-remote-interface": "^0.32.1",
+    "convert-source-map": "^2.0.0",
     "critters": "^0.0.16",
-    "esbuild": "^0.17.3",
-    "esbuild-plugin-import-glob": "npm:@alloc/esbuild-plugin-import-glob@^0.1.6",
-    "esbuild-plugin-meta-url": "npm:@chialab/esbuild-plugin-meta-url@^0.17.2",
+    "esbuild": "^0.17.12",
+    "esbuild-extra": "^0.1.3",
     "execa": "^7.0.0",
     "exit-hook": "^3.2.0",
+    "fast-glob": "^3.2.12",
     "glob": "^8.1.0",
     "html-minifier-terser": "^7.1.0",
     "kleur": "^4.1.5",
@@ -71,10 +78,5 @@
     "web-ext": "^7.5.0",
     "webextension-polyfill": "^0.10.0",
     "ws": "^8.12.1"
-  },
-  "pnpm": {
-    "patchedDependencies": {
-      "@chialab/esbuild-plugin-meta-url@0.17.2": "patches/@chialab__esbuild-plugin-meta-url@0.17.2.patch"
-    }
   }
 }
