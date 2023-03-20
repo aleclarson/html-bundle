@@ -1,6 +1,7 @@
 import fs from 'fs'
 import md5Hex from 'md5-hex'
 import svgToDataUri from 'mini-svg-data-uri'
+import path from 'path'
 import { Config } from '../../config.mjs'
 import { buildCSSFile } from '../css.mjs'
 import { CssPlugin, Plugin } from '../plugin.mjs'
@@ -13,6 +14,15 @@ export const cssReloadPlugin: Plugin = (config, flags) => {
     const hash = md5Hex(code)
     cssEntries.set(file, hash)
     return hash != prevHash
+  }
+
+  config.registerCssEntry = (file, code) => {
+    if (path.isAbsolute(file)) {
+      file = path.relative(process.cwd(), file)
+    }
+    if (!cssEntries.has(file)) {
+      cssEntries.set(file, code != null ? md5Hex(code) : '')
+    }
   }
 
   return {

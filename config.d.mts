@@ -117,6 +117,15 @@ export interface ConfigAPI {
   getBuildPath(file: string): string
   resolve(id: string, importer?: string | URL): URL
   resolveDevUrl(id: string, importer?: string | URL): URL
+  /**
+   * If a `.css` file isn't imported by an HTML file (eg: imported by
+   * JS), it needs to be explicitly registered, or else the `cssReload`
+   * plugin won't rebundle it when it or one of its dependencies is
+   * changed.
+   *
+   * Only exists in watch mode.
+   */
+  registerCssEntry?(file: string, code?: string): void
 }
 
 export type Entry = {
