@@ -3,6 +3,7 @@ import chromeRemote from 'chrome-remote-interface'
 import exitHook from 'exit-hook'
 import fs from 'fs'
 import { cyan, red, yellow } from 'kleur/colors'
+import { createRequire } from 'module'
 import path from 'path'
 import { cmd as webExtCmd } from 'web-ext'
 import { Config, Entry, WebExtension } from '../../config.mjs'
@@ -33,9 +34,9 @@ export const webextPlugin: Plugin = async (config, flags) => {
 
   // Copy the webextension-polyfill to the build if needed.
   if (webextConfig.polyfill) {
-    const polyfillPath = path.resolve(
-      import.meta.url.replace(/^file:/, ''),
-      '../../../node_modules/webextension-polyfill/dist/browser-polyfill' +
+    const importer = decodeURIComponent(new URL(import.meta.url).pathname)
+    const polyfillPath = createRequire(importer).resolve(
+      'webextension-polyfill/dist/browser-polyfill' +
         (config.mode == 'development' || flags.minify == false
           ? '.js'
           : '.min.js')
