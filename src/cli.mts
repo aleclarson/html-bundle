@@ -176,6 +176,10 @@ async function bundle(config: Config, flags: Flags) {
     const watcher = config.watcher!
     const changedFiles = new Set<string>()
 
+    config.watchFiles?.forEach(file => {
+      watcher.add(path.resolve(file))
+    })
+
     watcher.on('add', async file => {
       await rebuild()
       console.log(cyan('+'), file)

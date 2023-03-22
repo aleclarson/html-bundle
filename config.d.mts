@@ -32,6 +32,11 @@ export type UserConfig = {
    */
   scripts?: string[]
   /**
+   * Rebuild when these files change. Useful workaround for linked
+   * packages, until we have a better solution.
+   */
+  watchFiles?: string[]
+  /**
    * Compile JS/CSS syntax to be compatible with the browsers that match
    * the given Browserslist query.
    */
@@ -109,6 +114,7 @@ export type Config = Merge<
       https?: { cert?: string; key?: string }
     }
     watcher?: import('chokidar').FSWatcher
+    watchFiles?: string[]
     webext?: WebExtension.Config
   }
 >
