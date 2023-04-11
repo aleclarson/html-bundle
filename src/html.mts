@@ -56,7 +56,10 @@ export async function buildHTML(
 
   const meta = { scripts, styles }
   for (const plugin of config.plugins) {
-    plugin.document?.(document, entry.file, meta)
+    const hook = plugin.document
+    if (hook) {
+      await hook(document, entry.file, meta)
+    }
   }
 
   if (flags.watch && entry.hmr != false) {

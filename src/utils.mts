@@ -27,6 +27,7 @@ export async function loadBundleConfig(flags: Flags) {
 
   const userConfig = result.config as UserConfig
   const defaultPlugins: Plugin[] = [
+    await loadPlugin(import('./plugins/virtualFiles.mjs')),
     await loadPlugin(import('./plugins/cssCodeSplit.mjs')),
   ]
   if (flags.watch) {

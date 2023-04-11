@@ -1,104 +1,122 @@
 lockfileVersion: 5.4
 
-specifiers:
-  '@alloc/fast-rimraf': ^1.0.8
-  '@alloc/prettier-config': ^1.0.0
-  '@ampproject/remapping': ^2.2.0
-  '@babel/core': ^7.21.3
-  '@chialab/estransform': ^0.17.3
-  '@chialab/node-resolve': ^0.17.0
-  '@types/babel__core': ^7.20.0
-  '@types/chrome-remote-interface': ^0.31.9
-  '@types/convert-source-map': ^2.0.0
-  '@types/etag': ^1.8.1
-  '@types/firefox-webext-browser': ^109.0.0
-  '@types/glob': ^8.0.0
-  '@types/html-minifier-terser': ^7.0.0
-  '@types/parse5': '6'
-  '@types/ws': ^8.5.4
-  '@web/parse5-utils': ^1.3.0
-  browserslist: ^4.21.5
-  browserslist-to-esbuild: ^1.2.0
-  cac: ^6.7.14
-  chokidar: ^3.5.3
-  chrome-launcher: ^0.15.1
-  chrome-remote-interface: ^0.32.1
-  convert-source-map: ^2.0.0
-  critters: ^0.0.16
-  esbuild: ^0.17.12
-  esbuild-extra: ^0.1.3
-  execa: ^7.0.0
-  exit-hook: ^3.2.0
-  fast-glob: ^3.2.12
-  glob: ^8.1.0
-  html-minifier-terser: ^7.1.0
-  kleur: ^4.1.5
-  lightningcss: ^1.19.0
-  md5-hex: ^4.0.0
-  mini-svg-data-uri: ^1.4.4
-  mitt: ^3.0.0
-  mrmime: ^1.0.1
-  parse5: ^6.0.1
-  prettier: ^2.8.4
-  ts-debounce: ^4.0.0
-  type-fest: ^3.6.0
-  typescript: ^4.9.4
-  unconfig: ^0.3.7
-  uuid: npm:@lukeed/uuid@^2.0.0
-  web-ext: ^7.5.0
-  webextension-polyfill: ^0.10.0
-  ws: ^8.12.1
+importers:
 
-dependencies:
-  '@ampproject/remapping': 2.2.0
-  '@babel/core': 7.21.3
-  '@chialab/estransform': 0.17.3
-  '@chialab/node-resolve': 0.17.0
-  '@types/firefox-webext-browser': 109.0.0
-  '@web/parse5-utils': 1.3.0
-  browserslist: 4.21.5
-  browserslist-to-esbuild: 1.2.0
-  cac: 6.7.14
-  chokidar: 3.5.3
-  chrome-remote-interface: 0.32.1
-  convert-source-map: 2.0.0
-  critters: 0.0.16
-  esbuild: 0.17.12
-  esbuild-extra: 0.1.3_esbuild@0.17.12
-  execa: 7.0.0
-  exit-hook: 3.2.0
-  fast-glob: 3.2.12
-  glob: 8.1.0
-  html-minifier-terser: 7.1.0
-  kleur: 4.1.5
-  lightningcss: 1.19.0
-  md5-hex: 4.0.0
-  mini-svg-data-uri: 1.4.4
-  mitt: 3.0.0
-  mrmime: 1.0.1
-  parse5: 6.0.1
-  ts-debounce: 4.0.0
-  type-fest: 3.6.0
-  unconfig: 0.3.7
-  uuid: /@lukeed/uuid/2.0.0
-  web-ext: 7.5.0
-  webextension-polyfill: 0.10.0
-  ws: 8.12.1
+  .:
+    specifiers:
+      '@alloc/fast-rimraf': ^1.0.8
+      '@alloc/prettier-config': ^1.0.0
+      '@ampproject/remapping': ^2.2.0
+      '@babel/core': ^7.21.3
+      '@chialab/estransform': ^0.17.3
+      '@chialab/node-resolve': ^0.17.0
+      '@types/babel__core': ^7.20.0
+      '@types/chrome-remote-interface': ^0.31.9
+      '@types/convert-source-map': ^2.0.0
+      '@types/etag': ^1.8.1
+      '@types/firefox-webext-browser': ^109.0.0
+      '@types/glob': ^8.0.0
+      '@types/html-minifier-terser': ^7.0.0
+      '@types/parse5': '6'
+      '@types/ws': ^8.5.4
+      '@web/parse5-utils': ^1.3.0
+      browserslist: ^4.21.5
+      browserslist-to-esbuild: ^1.2.0
+      cac: ^6.7.14
+      chokidar: ^3.5.3
+      chrome-launcher: ^0.15.1
+      chrome-remote-interface: ^0.32.1
+      convert-source-map: ^2.0.0
+      critters: ^0.0.16
+      esbuild: ^0.17.12
+      esbuild-extra: ^0.1.3
+      execa: ^7.0.0
+      exit-hook: ^3.2.0
+      fast-glob: ^3.2.12
+      glob: ^8.1.0
+      html-minifier-terser: ^7.1.0
+      kleur: ^4.1.5
+      lightningcss: ^1.19.0
+      md5-hex: ^4.0.0
+      mini-svg-data-uri: ^1.4.4
+      mitt: ^3.0.0
+      mrmime: ^1.0.1
+      node-forge: ^1.3.1
+      parse5: ^6.0.1
+      prettier: ^2.8.4
+      ts-debounce: ^4.0.0
+      type-fest: ^3.6.0
+      typescript: ^4.9.4
+      unconfig: ^0.3.7
+      uuid: npm:@lukeed/uuid@^2.0.0
+      web-ext: ^7.5.0
+      webextension-polyfill: ^0.10.0
+      ws: ^8.12.1
+    dependencies:
+      '@ampproject/remapping': 2.2.0
+      '@babel/core': 7.21.3
+      '@chialab/estransform': 0.17.3
+      '@chialab/node-resolve': 0.17.0
+      '@types/firefox-webext-browser': 109.0.0
+      '@web/parse5-utils': 1.3.0
+      browserslist: 4.21.5
+      browserslist-to-esbuild: 1.2.0
+      cac: 6.7.14
+      chokidar: 3.5.3
+      chrome-remote-interface: 0.32.1
+      convert-source-map: 2.0.0
+      critters: 0.0.16
+      esbuild: 0.17.12
+      esbuild-extra: 0.1.3_esbuild@0.17.12
+      execa: 7.0.0
+      exit-hook: 3.2.0
+      fast-glob: 3.2.12
+      glob: 8.1.0
+      html-minifier-terser: 7.1.0
+      kleur: 4.1.5
+      lightningcss: 1.19.0
+      md5-hex: 4.0.0
+      mini-svg-data-uri: 1.4.4
+      mitt: 3.0.0
+      mrmime: 1.0.1
+      node-forge: 1.3.1
+      parse5: 6.0.1
+      ts-debounce: 4.0.0
+      type-fest: 3.6.0
+      unconfig: 0.3.7
+      uuid: /@lukeed/uuid/2.0.0
+      web-ext: 7.5.0
+      webextension-polyfill: 0.10.0
+      ws: 8.12.1
+    devDependencies:
+      '@alloc/fast-rimraf': 1.0.8
+      '@alloc/prettier-config': 1.0.0
+      '@types/babel__core': 7.20.0
+      '@types/chrome-remote-interface': 0.31.9
+      '@types/convert-source-map': 2.0.0
+      '@types/etag': 1.8.1
+      '@types/glob': 8.0.1
+      '@types/html-minifier-terser': 7.0.0
+      '@types/parse5': 6.0.3
+      '@types/ws': 8.5.4
+      chrome-launcher: 0.15.1
+      prettier: 2.8.4
+      typescript: 4.9.5
 
-devDependencies:
-  '@alloc/fast-rimraf': 1.0.8
-  '@alloc/prettier-config': 1.0.0
-  '@types/babel__core': 7.20.0
-  '@types/chrome-remote-interface': 0.31.9
-  '@types/convert-source-map': 2.0.0
-  '@types/etag': 1.8.1
-  '@types/glob': 8.0.1
-  '@types/html-minifier-terser': 7.0.0
-  '@types/parse5': 6.0.3
-  '@types/ws': 8.5.4
-  chrome-launcher: 0.15.1
-  prettier: 2.8.4
-  typescript: 4.9.5
+  packages/unocss:
+    specifiers:
+      '@alloc/html-bundle': workspace:^7.4.1
+      '@rollup/pluginutils': ^5.0.2
+      '@unocss/config': ^0.50.6
+      '@unocss/core': ^0.50.6
+      md5-hex: ^4.0.0
+    dependencies:
+      '@rollup/pluginutils': 5.0.2
+      '@unocss/config': 0.50.6
+      '@unocss/core': 0.50.6
+      md5-hex: 4.0.0
+    devDependencies:
+      '@alloc/html-bundle': link:../..
 
 packages:
 
@@ -698,6 +716,20 @@ packages:
       config-chain: 1.1.13
     dev: false
 
+  /@rollup/pluginutils/5.0.2:
+    resolution: {integrity: sha512-pTd9rIsP92h+B6wWwFbW8RkZv4hiR/xKsqre4SIuAOaOEQRxi0lqLke9k2/7WegC85GgUs9pjmOjCUi3In4vwA==}
+    engines: {node: '>=14.0.0'}
+    peerDependencies:
+      rollup: ^1.20.0||^2.0.0||^3.0.0
+    peerDependenciesMeta:
+      rollup:
+        optional: true
+    dependencies:
+      '@types/estree': 1.0.0
+      estree-walker: 2.0.2
+      picomatch: 2.3.1
+    dev: false
+
   /@sindresorhus/is/5.3.0:
     resolution: {integrity: sha512-CX6t4SYQ37lzxicAqsBtxA3OseeoVrh9cSJ5PFYam0GksYlupRfy1A+Q4aYD3zvcfECLc0zO2u+ZnR2UYKvCrw==}
     engines: {node: '>=14.16'}
@@ -749,6 +781,10 @@ packages:
     resolution: {integrity: sha512-QUm4YOC/ENo0VjPVl2o8HGyTbHHQGDOw8PCg3rXBucYHKyZN/XjXRbPFAV1tB2FvM0/wyFoDct4cTIctzKrQFg==}
     dev: true
 
+  /@types/estree/1.0.0:
+    resolution: {integrity: sha512-WulqXMDUTYAXCjZnk6JtIHPigp55cVtDgDrO2gHRwhyJto21+1zbVCtOYB2L1F9w4qCQ0rOGWBnBe0FNTiEJIQ==}
+    dev: false
+
   /@types/etag/1.8.1:
     resolution: {integrity: sha512-bsKkeSqN7HYyYntFRAmzcwx/dKW4Wa+KVMTInANlI72PWLQmOpZu96j0OqHZGArW4VQwCmJPteQlXaUDeOB0WQ==}
     dependencies:
@@ -798,6 +834,18 @@ packages:
     resolution: {integrity: sha512-Cn6WYCm0tXv8p6k+A8PvbDG763EDpBoTzHdA+Q/MF6H3sapGjCm9NzoaJncJS9tUKSuCoDs9XHxYYsQDgxR6kw==}
     dependencies:
       '@types/node': 18.14.0
+    dev: false
+
+  /@unocss/config/0.50.6:
+    resolution: {integrity: sha512-/IdnXyU4NOQCXBryZsEv9GYAnTvCZ/wmm5mv5ZIPXrS1ZClVbCbnwUxIW08t4EHIX/E9gSFClzXJ52pLBFkZ7g==}
+    engines: {node: '>=14'}
+    dependencies:
+      '@unocss/core': 0.50.6
+      unconfig: 0.3.7
+    dev: false
+
+  /@unocss/core/0.50.6:
+    resolution: {integrity: sha512-WMIp8xr7YSlID2whqfRGLwagp59e6u4ckPACEpoDOW8sTeSPRZm54hxPhuWXD1SQuqcwHPMtM9nzGD8UOnqQxA==}
     dev: false
 
   /@web/parse5-utils/1.3.0:
@@ -1886,6 +1934,10 @@ packages:
   /estraverse/5.3.0:
     resolution: {integrity: sha512-MMdARuVEQziNTeJD8DgMqmhwR11BRQ/cBP+pLtYdSTnf3MIO8fFeiINEbX36ZdNlfU/7A9f3gUw49B3oQsvwBA==}
     engines: {node: '>=4.0'}
+    dev: false
+
+  /estree-walker/2.0.2:
+    resolution: {integrity: sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w==}
     dev: false
 
   /esutils/2.0.3:

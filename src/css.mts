@@ -25,7 +25,10 @@ export async function buildCSSFile(
     })
     .flat()
 
-  console.log(yellow('⌁'), baseRelative(file))
+  if (!config.virtualFiles[file]) {
+    console.log(yellow('⌁'), baseRelative(file))
+  }
+
   const bundle = await lightningCss.bundleAsync({
     minify:
       flags.minify == true ||

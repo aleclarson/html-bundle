@@ -72,10 +72,6 @@ export const transformGlob = async (
 
   const plugins: ParserOptions['plugins'] = []
 
-  if (config.ts) {
-    plugins.push('typescript')
-  }
-
   if (config.jsx) {
     plugins.push('jsx')
   }
@@ -87,6 +83,7 @@ export const transformGlob = async (
         plugins,
       },
       plugins: [[babelPluginGlobTransformation, config]],
+      sourceMaps: true,
     })
 
     if (!babelOutput?.code) {
@@ -95,6 +92,7 @@ export const transformGlob = async (
 
     return {
       code: babelOutput.code,
+      map: babelOutput.map,
     }
   } catch (error) {
     if (error instanceof CodeError && error.nodePath.node.loc) {

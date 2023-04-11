@@ -229,20 +229,24 @@ async function bundle(config: Config, flags: Flags) {
       changedFiles.clear()
 
       if (needRebuild) {
-        config.events.emit('will-rebuild')
-        const timer = performance.now()
-        await build()
-        config.events.emit('rebuild')
+        try {
+          config.events.emit('will-rebuild')
+          const timer = performance.now()
+          await build()
+          config.events.emit('rebuild')
 
-        for (const plugin of config.plugins) {
-          if (!plugin.buildEnd) continue
-          await plugin.buildEnd(true)
+          for (const plugin of config.plugins) {
+            if (!plugin.buildEnd) continue
+            await plugin.buildEnd(true)
+          }
+
+          console.log(
+            cyan('build complete in %sms'),
+            (performance.now() - timer).toFixed(2)
+          )
+        } catch (e: any) {
+          console.error(e)
         }
-
-        console.log(
-          cyan('build complete in %sms'),
-          (performance.now() - timer).toFixed(2)
-        )
       } else {
         await Promise.all(
           Array.from(acceptedFiles, ([hmr, files]) => hmr.update(files))

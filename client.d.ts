@@ -1,7 +1,6 @@
-/// <reference path="node_modules/esbuild-plugin-import-glob/client.d.ts" />
-
 interface ImportMeta {
   env: ImportMetaEnv
+  glob: ImportGlobFunction
 }
 
 interface ImportMetaEnv {
@@ -14,4 +13,18 @@ declare const process: {
   env: {
     NODE_ENV: string
   }
+}
+
+type ImportGlobOptions<TEager extends boolean> = {
+  eager?: TEager
+  import?: string
+}
+
+interface ImportGlobFunction {
+  <TEager extends boolean = false>(
+    pattern: string | string[],
+    options?: ImportGlobOptions<TEager>
+  ): TEager extends true
+    ? Record<string, unknown>
+    : Record<string, () => Promise<any>>
 }

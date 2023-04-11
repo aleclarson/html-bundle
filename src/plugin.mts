@@ -33,7 +33,7 @@ export interface PluginInstance {
       scripts: RelativeScript[]
       styles: RelativeStyle[]
     }
-  ): void
+  ): Promisable<void>
   /**
    * Called after esbuild has finished bundling the entry scripts found
    * within all of your HTML files.

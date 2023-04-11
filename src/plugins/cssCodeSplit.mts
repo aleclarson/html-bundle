@@ -1,5 +1,6 @@
 import md5Hex from 'md5-hex'
 import { buildCSSFile } from '../css.mjs'
+import { Config, Flags } from '../index.mjs'
 import { Plugin } from '../plugin.mjs'
 import { baseRelative } from '../utils.mjs'
 
@@ -14,35 +15,56 @@ export const cssCodeSplit: Plugin = (config, flags) => {
     setup(build) {
       build.onLoad({ filter: /\.css$/ }, async args => {
         const css = await buildCSSFile(args.path, config, flags)
-        const code = css.code.toString('utf8')
-        config.registerCssEntry?.(args.path, code)
-
-        const jsArgs = [
-          `"${md5Hex(args.path).slice(0, 12)}"`,
-          '`' + (flags.minify ? '' : '\n') + code.replace(/`/g, '\\`') + '`',
-        ]
-
-        let jsModule: string
-        if (flags.watch) {
-          const url = new URL(
-            baseRelative(config.getBuildPath(args.path)),
-            config.server.url
-          )
-          jsModule = `(${injectStyleTag_DEV})(${jsArgs}, "${url.href}")`
-        } else {
-          jsModule = `(${injectStyleTag})(${jsArgs})`
-        }
-
         return {
-          contents: jsModule,
           loader: 'js',
+          contents: getCSSInjectionScript(
+            css.code.toString('utf8'),
+            args.path,
+            config,
+            flags
+          ),
         }
       })
+
+      build.onTransform(
+        { filter: /\.css$/, namespace: 'virtual' },
+        async args => ({
+          loader: 'js',
+          code: getCSSInjectionScript(args.code, args.path, config, flags),
+        })
+      )
     },
   }
   config.esbuild.plugins ||= []
   config.esbuild.plugins.push(esbuildPlugin)
   return {}
+}
+
+function getCSSInjectionScript(
+  code: string,
+  file: string,
+  config: Config,
+  flags: Flags
+) {
+  config.registerCssEntry?.(file, code)
+
+  const jsArgs = [
+    `"${md5Hex(file).slice(0, 12)}"`,
+    '`' + (flags.minify ? '' : '\n') + code.replace(/[\\`]/g, '\\$&') + '`',
+  ]
+
+  let jsModule: string
+  if (flags.watch) {
+    const url = new URL(
+      baseRelative(config.getBuildPath(file)),
+      config.server.url
+    )
+    jsModule = `(${injectStyleTag_DEV})(${jsArgs}, "${url.href}")`
+  } else {
+    jsModule = `(${injectStyleTag})(${jsArgs})`
+  }
+
+  return jsModule
 }
 
 declare const document: {

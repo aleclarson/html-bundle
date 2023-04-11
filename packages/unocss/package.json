@@ -1,0 +1,19 @@
+{
+  "name": "@alloc/html-bundle-unocss",
+  "version": "0.1.0",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.mts",
+  "scripts": {
+    "dev": "tsc -p ./ --watch --sourceMap",
+    "build": "tsc -p ./"
+  },
+  "dependencies": {
+    "@rollup/pluginutils": "^5.0.2",
+    "@unocss/config": "^0.50.6",
+    "@unocss/core": "^0.50.6",
+    "md5-hex": "^4.0.0"
+  },
+  "devDependencies": {
+    "@alloc/html-bundle": "workspace:^7.4.1"
+  }
+}
