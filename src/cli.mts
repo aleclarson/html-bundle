@@ -304,6 +304,7 @@ async function installHttpServer(config: Config, servePlugins: ServePlugin[]) {
       // If no virtual file exists, check the local filesystem.
       if (!file && fsAllow.test(uri)) {
         try {
+          console.log(cyan('reading'), '.' + uri)
           file = {
             data: fs.readFileSync('.' + uri),
           }

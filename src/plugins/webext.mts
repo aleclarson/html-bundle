@@ -84,13 +84,14 @@ export const webextPlugin: Plugin = async (config, flags) => {
       ).catch(console.error)
 
       clients.on('connect', ({ client }) => {
-        client
-          .evaluate('[location.protocol, location.host]')
-          .then(([protocol, host] = []) => {
+        client.evaluate('[location.protocol, location.host]').then(result => {
+          if (Array.isArray(result)) {
+            const [protocol, host] = result
             if (protocol) {
               client.emit('webext:uuid', { protocol, host })
             }
-          })
+          }
+        })
       })
     },
   }
