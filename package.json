@@ -12,12 +12,19 @@
     "prepublishOnly": "rimraf dist && tsc --build",
     "update": "npx npm-check-updates -u && npx typesync && npm i && npm outdated"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alloc/htmelt.git"
+  },
+  "homepage": "https://github.com/alloc/htmelt",
   "keywords": [
     "html",
     "bundler",
     "typescript",
     "esbuild",
     "web-ext",
+    "plugins",
+    "extensible",
     "extendible",
     "lightningcss",
     "vite"
