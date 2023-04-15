@@ -1,11 +1,14 @@
-# @alloc/html-bundle
+# htmelt
 
-Divergent fork of `html-bundle` that I made for simple-as-fuck SPA setups. Unfortunately no JS HMR, but it's not a big deal for me.
+Experimental bundler for HTML, powered by ESBuild and LightningCSS. It
+"melts" (hence the name htmelt) any CSS and JS found in your HTML files
+into CSS/JS bundles.
 
 <sub>You should probably just use Vite.</sub>
 
 ### Features
 
+- custom plugins with the `bundle.config.js` file
 - ESBuild integration (TypeScript + ESM syntax, code splitting, dynamic imports)
 - LightningCSS integration
 - Browserslist integration
@@ -27,14 +30,14 @@ Divergent fork of `html-bundle` that I made for simple-as-fuck SPA setups. Unfor
 
 ### Usage
 
-Before running `html-bundle`, you should move your HTML files into the `src/` directory and use relative paths for JS/CSS references inside your HTML files.
+Before running `htmelt`, you should move your HTML files into the `src/` directory and use relative paths for JS/CSS references inside your HTML files.
 
 ```sh
 # Run in development mode
-pnpm html-bundle --watch
+pnpm htmelt --watch
 
 # Run in production mode
-pnpm html-bundle
+pnpm htmelt
 ```
 
 If you want TypeScript to recognize `import.meta.glob` calls, you can add the following to your `tsconfig.json` file.

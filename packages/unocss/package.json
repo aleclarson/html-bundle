@@ -1,5 +1,5 @@
 {
-  "name": "@alloc/html-bundle-unocss",
+  "name": "@htmelt/unocss",
   "version": "0.1.0",
   "main": "dist/index.mjs",
   "types": "dist/index.d.mts",

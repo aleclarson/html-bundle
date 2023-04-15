@@ -1,10 +1,10 @@
 {
-  "name": "@alloc/html-bundle",
-  "version": "7.4.1",
+  "name": "htmelt",
+  "version": "0.1.0",
   "description": "Bundle your HTML assets with Esbuild and LightningCSS. Custom plugins, HMR platform, and more.",
   "main": "./dist/index.mjs",
   "bin": {
-    "html-bundle": "./dist/cli.mjs"
+    "htmelt": "./dist/cli.mjs"
   },
   "scripts": {
     "dev": "tsc --build -w",
@@ -23,9 +23,6 @@
     "vite"
   ],
   "author": "Alec Larson",
-  "contributors": [
-    "Fabian Krutsch <f.krutsch@gmx.de> (https://krutsch.netlify.app/)"
-  ],
   "license": "MIT",
   "prettier": "@alloc/prettier-config",
   "devDependencies": {
